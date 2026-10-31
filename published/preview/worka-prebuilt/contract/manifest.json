@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "codeVersion": "08741526a4608ca9b505073fa79ce08035d4a85c4e2061ce49ab7432719e48cb",
+  "status": "ready",
+  "files": [
+    "SKILL.md",
+    "references/api.d.ts",
+    "references/types/actions.d.ts",
+    "references/types/document.d.ts",
+    "references/types/harbor.d.ts",
+    "references/types/messages.d.ts",
+    "references/types/model.d.ts",
+    "references/types/projection.d.ts",
+    "references/types/record-links.d.ts",
+    "references/types/routes.d.ts",
+    "references/types/schemas.d.ts",
+    "references/types/state.d.ts",
+    "references/types/view-compact.d.ts",
+    "references/types/view-expanded.d.ts",
+    "references/types/view-model.d.ts",
+    "references/types/view-report.d.ts",
+    "references/types/view.d.ts"
+  ],
+  "diagnostics": [],
+  "skill": {
+    "name": "worka-candidate-preview",
+    "description": "接收候选版本，检查和控制项目预览，核对失败及修复反馈。"
+  },
+  "typeErrors": []
+}

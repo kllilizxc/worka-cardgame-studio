@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "codeVersion": "c87786756774ab575f8511e9e15334bcb9a1d9f528c96d4f61c91ce5ce31aa6e",
+  "status": "ready",
+  "files": [
+    "SKILL.md",
+    "references/api.d.ts",
+    "references/types/actions.d.ts",
+    "references/types/compact.d.ts",
+    "references/types/expanded.d.ts",
+    "references/types/model.d.ts",
+    "references/types/view.d.ts"
+  ],
+  "diagnostics": [],
+  "skill": {
+    "name": "cardgame-ideas",
+    "description": "保存作者尚未决定制作的灵感，在有具体需求时提供相关原话。"
+  },
+  "typeErrors": []
+}

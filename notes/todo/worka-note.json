@@ -1,0 +1,77 @@
+{
+  "onboarding": {
+    "title": "记下第一件待办",
+    "description": "输入事项后回车添加，做完直接勾选。",
+    "steps": [
+      "待办只是记录，不会自动执行。",
+      "需要帮忙时，把某一件交给 AI，在事项中打开原对话跟进。"
+    ],
+    "locales": {
+      "en": {
+        "title": "Record your first task",
+        "description": "Enter a task and press Enter to add it. Check it off when done.",
+        "steps": [
+          "Recording a task does not execute it automatically.",
+          "Assign an item to AI and follow its original conversation."
+        ]
+      }
+    }
+  },
+  "schemaVersion": 1,
+  "name": "制作待办",
+  "scenarios": "手上事情多、总忘记跟进的人：随手记下要做的事和截止时间，每天看一眼今天要做什么。",
+  "locales": {
+    "en": {
+      "name": "To-dos",
+      "summary": "Keep tasks, sources, conversations and results together."
+    }
+  },
+  "icon": {
+    "type": "svg",
+    "path": "icon.svg",
+    "monochrome": true
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "SKILL.md",
+    "actions.ts",
+    "assets.d.ts",
+    "assignment.ts",
+    "attachment-schema.ts",
+    "collaboration.ts",
+    "compact.tsx",
+    "contracts.ts",
+    "create-task-dialog.tsx",
+    "expanded.tsx",
+    "file-attachments.tsx",
+    "folio.css",
+    "icon.svg",
+    "item-details.tsx",
+    "list.ts",
+    "messages.ts",
+    "model.ts",
+    "package.json",
+    "progress-store.ts",
+    "progress-timeline.tsx",
+    "progress.ts",
+    "record-links.tsx",
+    "requirement-editor.tsx",
+    "route-search.ts",
+    "route-state.ts",
+    "routes.tsx",
+    "schedule.ts",
+    "sessions.ts",
+    "source-label.tsx",
+    "state.ts",
+    "task-dialog.tsx",
+    "task-fields.tsx",
+    "tile.css",
+    "todo-composer.ts",
+    "todo-layout.tsx",
+    "todo-timeline.tsx",
+    "use-optimistic-moves.ts",
+    "view-shared.tsx",
+    "view.tsx"
+  ]
+}

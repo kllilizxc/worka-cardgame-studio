@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "name": "游戏内容库",
+  "scenarios": "按用途浏览、搜索和定位秘境、战斗、卡牌、角色、商店与素材。",
+  "icon": {
+    "type": "emoji",
+    "value": "🗂️"
+  },
+  "files": [
+    "SKILL.md",
+    "actions.ts",
+    "compact.tsx",
+    "expanded.tsx",
+    "model.ts",
+    "package.json",
+    "search.ts",
+    "view.tsx",
+    "media.ts",
+    "style.css",
+    "previews/0.json",
+    "previews/1.json",
+    "previews/2.json",
+    "previews/3.json",
+    "previews/4.json",
+    "previews/5.json",
+    "previews/6.json",
+    "previews/7.json",
+    "previews/8.json",
+    "previews/9.json",
+    "previews/a.json",
+    "previews/b.json",
+    "previews/c.json",
+    "previews/d.json",
+    "previews/e.json",
+    "previews/f.json",
+    "art.d.ts",
+    "visual.tsx",
+    "compact.css",
+    "art/talisman.svg",
+    "art/ghost.svg",
+    "art/ferryman.svg",
+    "art/salt.svg",
+    "art/sound.svg",
+    "art/map.svg",
+    "art/fight.svg",
+    "home.ts",
+    "campaign-art.json"
+  ],
+  "prerequisites": [
+    {
+      "name": "extension.game-project.status",
+      "connection": "game",
+      "optional": true
+    }
+  ],
+  "onboarding": {
+    "title": "连接游戏仓库",
+    "description": "连接后，本桌面的游戏便笺会读取同一份 CardGame 项目。",
+    "steps": [
+      "共享设置对话只需收集一次来源，可选择本机的游戏仓库目录或 GitHub HTTPS 地址。使用 extension.invoke 调用 game-project 的 bind 方法，input.source 为选定的目录或地址。"
+    ],
+    "locales": {
+      "en": {
+        "title": "Connect the game repository",
+        "description": "The game notes on this desktop read from the same CardGame project.",
+        "steps": [
+          "In the shared setup conversation, choose the local game checkout or its GitHub HTTPS URL once. Use extension.invoke with extension game-project, method bind and input.source set to the chosen path or URL."
+        ]
+      }
+    }
+  }
+}

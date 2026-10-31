@@ -1,0 +1,13 @@
+[
+  {
+    "key":"idea-recall","name":"制作时推荐点子",
+    "goal":"明确交办时检索旧点子，向作者推荐相关原话，并沿用制作事项的原生对话落实需求。",
+    "enabled":true,"nodeKeys":["ideas","todo"],"source":{"path":"connections/idea-recall"},
+    "subscriptions":[{"nodeKey":"ideas","events":[]},{"nodeKey":"todo","events":["items.delegationRequested","items.sessionLinked","items.changed"],"boundEvents":["items.changed"]}]
+  },
+  {
+    "key":"delivery","name":"交付试玩","enabled":true,"nodeKeys":["todo","preview"],
+    "goal":"将明确的游戏代码提交交付到试玩，关联原制作事项和确切版本；试玩反馈回到原对话。",
+    "recipe":"desk-preview"
+  }
+]

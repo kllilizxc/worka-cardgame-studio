@@ -1,0 +1,4 @@
+* text=auto eol=lf
+published/** -text
+*.png binary
+*.jpg binary

@@ -1,0 +1,30 @@
+{
+  "map": {
+    "id":"jade-trial", "title":"青玉洞试炼", "body":"山中洞天，雾气常绕。沿着古药路搜寻遗物，从后山小径撤离。",
+    "rooms":[
+      ["jade-entrance","雾林入口","入口",0,["willow-village"]],
+      ["willow-village","柳沙村","搜刮",1,["broken-bridge","hill-shrine"]],
+      ["broken-bridge","断木桥","事件",2,["jade-cave"]],
+      ["hill-shrine","山腰古祠","搜刮",2,["jade-cave"]],
+      ["jade-cave","青玉洞","战斗",3,["hill-exit"]],
+      ["hill-exit","后山小径","撤离",4,[]]
+    ]
+  },
+  "cards":[
+    ["jade-step-card","清风步","功法","抽一张牌，获得一点护甲。"],
+    ["jade-fox-card","灵狐札","召唤","召来一只灵狐。"],
+    ["spirit-seal","引魂符","符箓","符火造成两点伤害。"]
+  ],
+  "shop":{"id":"mist-rope-offer","title":"雾林药铺 · 归返绳","item":"tool.return-rope","price":120},
+  "deck":{"id":"jade-mist-deck","title":"雾林试炼","cards":[["jade-step-card",3],["jade-fox-card",3],["AR_001",6],["AR_002",4],["AR_003",4],["spirit-seal",4]]},
+  "battle":{
+    "id":"jade-warden","title":"封印守关者","body":"两名弟子守住洞口。石壁上的最后一道符印，会在第四回合唤醒增援。",
+    "units":[["jade-sentinel","封印守关者",3,16],["jade-puppet","傀儡弟子",2,4],["jade-puppet","傀儡弟子",2,4]],
+    "events":[[1,"环境","试探"],[2,"环境","守卫出战"],[3,"环境","技能强化"],[4,"增援","增援出现"]]
+  },
+  "scenes":[
+    {"id":"studio-bridge-bell","title":"桥下的倒铃","body":"你在雾气弥漫的桥下发现一口倒挂的铜铃。风一过，铃声顺着山谷飘去。药篓旁的脚印却分成两路。","choices":[{"label":"循铃声入雾","to":"studio-mist-clash"},{"label":"沿药香上坡","to":"studio-whiteleaf"}]},
+    {"id":"studio-mist-clash","title":"雾中交锋","body":"雾从石阶间裂开，铁甲守关者挡住了去路。两名傀儡无声地合拢。","choices":[]},
+    {"id":"studio-whiteleaf","title":"白叶草坡","body":"你拨开一片白叶草，在泥里找到师兄的剑穗。羊肠小径通向山外。","choices":[]}
+  ]
+}
