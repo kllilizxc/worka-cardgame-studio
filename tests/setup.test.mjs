@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,readFile,writeFile,rm,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,realpath,writeFile,rm,symlink} from 'node:fs/promises';
 import {execFileSync,spawn} from 'node:child_process';
 import {createServer} from 'node:http';
 import {once} from 'node:events';
@@ -51,7 +51,7 @@ test('one binding projects each selected note, restarts and refreshes dirty file
   assert.equal(f.values.get('one-links'),1);
   for(const note of ['one-story','one-cards','one-preview'])assert.equal((await status(provider,note)).ready,true);
   assert.equal((await status(provider,'two-cards')).ready,false);
-  assert.equal((await index(provider,'one-preview')).gameRoot,f.game);
+  assert.equal((await index(provider,'one-preview')).gameRoot,await realpath(f.game));
   assert.equal((await index(provider,'one-preview')).gameCommit,r.commit);
   const rows=await index(provider,'one-cards');assert.equal(rows.records[0].title,'测试灵狐');
   const original=await index(provider,'one-story');assert.equal(original.storyIndex[0].body,'');
@@ -98,8 +98,8 @@ test('the published aliases bind different checkouts when the same desktop is im
     await provider.invoke('bind',{source:game},shared('one'));
     assert.equal((await status(provider,'two-cards')).configured,false);
     await provider.invoke('bind',{source:second},shared('two'));
-    assert.equal((await index(provider,'one-preview')).gameRoot,game);
-    assert.equal((await index(provider,'two-preview')).gameRoot,second);
+    assert.equal((await index(provider,'one-preview')).gameRoot,await realpath(game));
+    assert.equal((await index(provider,'two-preview')).gameRoot,await realpath(second));
 
     const other={...shared('one'),providerConnection:shared('two').providerConnection};
     await assert.rejects(provider.invoke('bind',{source:game},other),/不属于当前桌面/);

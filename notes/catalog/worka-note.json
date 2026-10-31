@@ -52,5 +52,21 @@
       "connection": "game",
       "optional": true
     }
-  ]
+  ],
+  "onboarding": {
+    "title": "连接游戏仓库",
+    "description": "连接后，本桌面的游戏便笺会读取同一份 CardGame 项目。",
+    "steps": [
+      "共享设置对话只需收集一次来源，可选择本机的游戏仓库目录或 GitHub HTTPS 地址。使用 extension.invoke 调用 game-project 的 bind 方法，input.source 为选定的目录或地址。"
+    ],
+    "locales": {
+      "en": {
+        "title": "Connect the game repository",
+        "description": "The game notes on this desktop read from the same CardGame project.",
+        "steps": [
+          "In the shared setup conversation, choose the local game checkout or its GitHub HTTPS URL once. Use extension.invoke with extension game-project, method bind and input.source set to the chosen path or URL."
+        ]
+      }
+    }
+  }
 }

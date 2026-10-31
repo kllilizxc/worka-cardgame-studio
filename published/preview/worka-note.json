@@ -52,6 +52,7 @@
     "title": "查看执行成果的预览",
     "description": "关联 Todo 产出可运行版本后，预览会出现在这里。",
     "steps": [
+      "共享设置对话只需收集一次来源，可选择本机的游戏仓库目录或 GitHub HTTPS 地址。使用 extension.invoke 调用 game-project 的 bind 方法，input.source 为选定的目录或地址。",
       "先在关联 Todo 中查看任务是否已有可预览的版本。",
       "没有版本时不会自动启动项目。",
       "有了版本后，会分别显示准备、运行和检查的结果；能启动不代表已经验收。"
@@ -61,6 +62,7 @@
         "title": "Preview execution results",
         "description": "Runnable candidates from the linked Todo appear here.",
         "steps": [
+          "In the shared setup conversation, choose the local game checkout or its GitHub HTTPS URL once. Use extension.invoke with extension game-project, method bind and input.source set to the chosen path or URL.",
           "Check the linked Todo to see whether the task has produced a candidate.",
           "Projects do not start automatically when there are no candidates.",
           "Candidates show preparation, runtime and verification separately. Starting is not acceptance."
