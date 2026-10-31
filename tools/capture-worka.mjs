@@ -52,10 +52,15 @@ export async function captureWorkbench({app,host,desktopId,notes,output,bindGame
       }));
       const frames=page.frames().filter(f=>f.url().includes('/view/index.html'));
       assert.equal(frames.length,notes.length);
-      // A larger host mask cuts through the border the compact note paints at each corner.
-      const surfaces=page.locator('.note-frontend-host[data-mode="compact"] .note-frontend-content:has(.runtime-note-frame[data-compact-surface="transparent"])');
-      await surfaces.nth(notes.length-1).waitFor({state:'attached'});
-      assert.ok(await surfaces.evaluateAll(items=>items.every(item=>getComputedStyle(item).borderRadius==='0px')),'each authored compact outline must remain intact');
+      // Compare the visible border each note draws with the actual host clip.
+      for(const frame of frames){
+        const surface=await frame.frameElement();
+        const hostRadius=await surface.evaluate(el=>parseFloat(getComputedStyle(el.closest('.note-frontend-content')).borderTopLeftRadius));
+        const outline=frame.locator('.atlas-panel,.desk-note').first();
+        await outline.waitFor({state:'attached'});
+        const noteRadius=await outline.evaluate(el=>parseFloat(getComputedStyle(el).borderTopLeftRadius));
+        assert.ok(noteRadius>0 && noteRadius>=hostRadius,'compact note border falls outside the host clip');
+      }
       const panel=name=>{
         const record=notes.find(note=>note.value.name===name);
         assert.ok(record,name);

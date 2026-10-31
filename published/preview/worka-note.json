@@ -116,12 +116,13 @@
     "worka-prebuilt/view-expanded-3h96cnsh.js",
     "worka-prebuilt/entry-bundle.js",
     "worka-prebuilt/view-compact-2ejs3x5y.js",
+    "worka-prebuilt/view-compact-dtksf45c.css",
     "worka-prebuilt/zod-config.mjs",
     "worka-prebuilt/view-482n3vzz.js",
     "worka-prebuilt/view-runtime-57ccjbv6.js",
+    "worka-prebuilt/view-phtevqyn.css",
     "worka-prebuilt/view-runtime.mjs",
     "worka-prebuilt/view-expanded-gnba5x2h.css",
-    "worka-prebuilt/view-compact-a0kza7nf.css",
     "worka-prebuilt/entry-ybyz4kqz.js",
     "worka-prebuilt/index.html",
     "worka-prebuilt/actions.mjs",
@@ -143,7 +144,6 @@
     "worka-prebuilt/contract/references/types/view.d.ts",
     "worka-prebuilt/contract/SKILL.md",
     "worka-prebuilt/contract/manifest.json",
-    "worka-prebuilt/view-hvxe8x7h.css",
     "worka-prebuilt/manifest.json"
   ]
 }

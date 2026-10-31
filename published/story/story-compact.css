@@ -1,4 +1,4 @@
- .atlas-story{--serif:"Songti SC","Noto Serif CJK SC","SimSun",Georgia,serif;--sans:system-ui,sans-serif;box-sizing:border-box;height:100dvh;width:100%;border:1px solid #c7bdab;border-radius:7px;background:radial-gradient(125% 110% at 50% -10%,#fbf5e9,#eee2cb 98%);color-scheme:light}.atlas-story *{box-sizing:border-box}:where(.atlas-story) button{background:transparent;border:0;color:inherit;font:inherit;cursor:pointer}.atlas-story button:focus-visible{outline:2px solid #437366;outline-offset:-2px}
+ .atlas-story{--serif:"Songti SC","Noto Serif CJK SC","SimSun",Georgia,serif;--sans:system-ui,sans-serif;box-sizing:border-box;height:100dvh;width:100%;border:1px solid #c7bdab;border-radius:var(--wb-radius,16px);background:radial-gradient(125% 110% at 50% -10%,#fbf5e9,#eee2cb 98%);color-scheme:light}.atlas-story *{box-sizing:border-box}:where(.atlas-story) button{background:transparent;border:0;color:inherit;font:inherit;cursor:pointer}.atlas-story button:focus-visible{outline:2px solid #437366;outline-offset:-2px}
 .atlas-panel.atlas-cards,
 .atlas-panel.atlas-story {
   position: relative;
