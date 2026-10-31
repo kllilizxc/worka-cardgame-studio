@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "name": "点子库",
+  "scenarios": "记下未定型的游戏创意，制作时寻找旧点子。",
+  "files": [
+    "README.md",
+    "SKILL.md",
+    "actions.ts",
+    "assets.d.ts",
+    "compact.tsx",
+    "expanded.tsx",
+    "icon.svg",
+    "ideas.css",
+    "model.ts",
+    "package.json",
+    "tile.css",
+    "view.tsx"
+  ],
+  "icon": {
+    "type": "svg",
+    "path": "icon.svg",
+    "monochrome": true
+  }
+}

@@ -1,0 +1,35 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,writeFile,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {buildStory,boundStoryConfig} from './story-index.mjs';
+
+test('原稿优先、穷尽剧情引用，并保留未绑定检出时的原文',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'worka-story-index-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  await mkdir(join(root,'public/data/story'),{recursive:true});
+  await mkdir(join(root,'knowledge/归舟'),{recursive:true});
+  await writeFile(join(root,'knowledge/index.md'),'# 项目资料');
+  await writeFile(join(root,'public/data/content-catalog.json'),JSON.stringify({resources:[{kind:'story',resourceId:'story.harbor',publicPath:'data/story/harbor.json'}]}));
+  const start='---\ntitle: 钟楼\nscene: true\nnodeId: tower\nchapter: 第一章\n---\n# 钟楼\n\n风里有钟声。\n\n## 选项\n\n- [下船](./boat.md)\n\n## 手记\n\n- [仅供参考](./boat.md)';
+  await writeFile(join(root,'knowledge/归舟/tower.md'),start);
+  await writeFile(join(root,'knowledge/归舟/boat.md'),'---\nscene: true\nnodeId: boat\nchapter: 第一章\n---\n# 船\n- 船夫：过河。 <!-- story-line: {"speakerId":"npc.boatman"} -->');
+  const graph={title:'归舟',entryNodeId:'tower',nodes:[{id:'tower',title:'旧稿'},{id:'boat',title:'船'},{id:'camp',title:'营地',detail:'江面渐静。'}],choices:[]};
+  await writeFile(join(root,'public/data/story/harbor.json'),JSON.stringify(graph));
+  const {initialConfig}=await buildStory(root), rows=initialConfig.storyIndex;
+  assert.equal(initialConfig.initialScene,'tower');
+  assert.equal(rows.filter(r=>r.nodeId==='tower').length,1);
+  const tower=rows.find(r=>r.id==='tower');
+  assert.deepEqual(tower.choices,[{label:'下船',to:'boat'}]);
+  assert.deepEqual(tower.folders,['归舟','归舟','第一章']);
+  assert.equal(tower.body,start);
+  assert.deepEqual(rows.find(r=>r.id==='boat').refs,[{note:'people',id:'npc.boatman'}]);
+  assert.equal(JSON.parse(rows.find(r=>r.id==='story.harbor::camp').body).nodes[0].detail,'江面渐静。');
+  assert.ok(!JSON.stringify(rows).includes(root));
+  const bound=boundStoryConfig(initialConfig);
+  assert.equal(bound.storyIndex.find(r=>r.id==='tower').body,'');
+  assert.ok(bound.storyIndex.find(r=>r.id==='tower').search.includes('风里有钟声'));
+  assert.equal(initialConfig.storyIndex.find(r=>r.id==='tower').body,start);
+  assert.throws(()=>boundStoryConfig({...initialConfig,resources:[]}),/资料入口/);
+});

@@ -1,0 +1,147 @@
+{
+  "prerequisites": [
+    {
+      "name": "extension.game-project.status",
+      "optional": true,
+      "connection": "game"
+    }
+  ],
+  "sharing": {
+    "document": {
+      "collection": "metadata",
+      "id": "root"
+    },
+    "records": [
+      {
+        "collection": "candidates",
+        "into": "candidates",
+        "key": "id",
+        "value": "view",
+        "shape": "array"
+      }
+    ],
+    "stateResources": [
+      "view"
+    ],
+    "statePaths": [
+      "candidates.*.key",
+      "candidates.*.title",
+      "candidates.*.receivedAt",
+      "candidates.*.featureId",
+      "candidates.*.desired.*",
+      "candidates.*.surfaces.*.name",
+      "candidates.*.surfaces.*.title",
+      "candidates.*.surfaces.*.url",
+      "candidates.*.status.*.phase",
+      "candidates.*.status.*.pass",
+      "candidates.*.status.*.since",
+      "candidates.*.status.*.updatedAt",
+      "candidates.*.status.*.url",
+      "candidates.*.status.*.verified.ok",
+      "candidates.*.status.*.failure.step",
+      "candidates.*.status.*.failure.owner",
+      "candidates.*.status.*.failure.handling"
+    ],
+    "state": [
+      "title",
+      "attached"
+    ],
+    "previews": true
+  },
+  "onboarding": {
+    "title": "查看执行成果的预览",
+    "description": "关联 Todo 产出可运行版本后，预览会出现在这里。",
+    "steps": [
+      "先在关联 Todo 中查看任务是否已有可预览的版本。",
+      "没有版本时不会自动启动项目。",
+      "有了版本后，会分别显示准备、运行和检查的结果；能启动不代表已经验收。"
+    ],
+    "locales": {
+      "en": {
+        "title": "Preview execution results",
+        "description": "Runnable candidates from the linked Todo appear here.",
+        "steps": [
+          "Check the linked Todo to see whether the task has produced a candidate.",
+          "Projects do not start automatically when there are no candidates.",
+          "Candidates show preparation, runtime and verification separately. Starting is not acceptance."
+        ]
+      }
+    }
+  },
+  "schemaVersion": 1,
+  "name": "试玩",
+  "scenarios": "开发者：将关联 Todo 产出的前端页面或服务版本跑起来，在合入前检查效果。",
+  "locales": {
+    "en": {
+      "name": "Candidate preview",
+      "summary": "Run a candidate build from the linked Todo and check it before it is merged, including failures and fix feedback."
+    }
+  },
+  "icon": {
+    "type": "svg",
+    "path": "icon.svg",
+    "monochrome": true
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "SKILL.md",
+    "actions.ts",
+    "assets.d.ts",
+    "campaign-art.json",
+    "document.ts",
+    "harbor.svg",
+    "harbor.tsx",
+    "icon.svg",
+    "messages.ts",
+    "model.ts",
+    "package.json",
+    "preview-compact.css",
+    "preview.css",
+    "projection.ts",
+    "record-links.tsx",
+    "routes.tsx",
+    "schemas.ts",
+    "state.ts",
+    "view-compact.tsx",
+    "view-expanded.tsx",
+    "view-model.tsx",
+    "view-report.tsx",
+    "view.tsx",
+    ".gitattributes",
+    "worka-prebuilt/entry-bundle.css",
+    "worka-prebuilt/entry-bundle.tailwind.css",
+    "worka-prebuilt/view-expanded-3h96cnsh.js",
+    "worka-prebuilt/entry-bundle.js",
+    "worka-prebuilt/view-compact-2ejs3x5y.js",
+    "worka-prebuilt/zod-config.mjs",
+    "worka-prebuilt/view-482n3vzz.js",
+    "worka-prebuilt/view-runtime-57ccjbv6.js",
+    "worka-prebuilt/view-runtime.mjs",
+    "worka-prebuilt/view-expanded-gnba5x2h.css",
+    "worka-prebuilt/view-compact-a0kza7nf.css",
+    "worka-prebuilt/entry-ybyz4kqz.js",
+    "worka-prebuilt/index.html",
+    "worka-prebuilt/actions.mjs",
+    "worka-prebuilt/contract/references/api.d.ts",
+    "worka-prebuilt/contract/references/types/routes.d.ts",
+    "worka-prebuilt/contract/references/types/harbor.d.ts",
+    "worka-prebuilt/contract/references/types/record-links.d.ts",
+    "worka-prebuilt/contract/references/types/state.d.ts",
+    "worka-prebuilt/contract/references/types/model.d.ts",
+    "worka-prebuilt/contract/references/types/schemas.d.ts",
+    "worka-prebuilt/contract/references/types/view-model.d.ts",
+    "worka-prebuilt/contract/references/types/document.d.ts",
+    "worka-prebuilt/contract/references/types/projection.d.ts",
+    "worka-prebuilt/contract/references/types/view-report.d.ts",
+    "worka-prebuilt/contract/references/types/view-expanded.d.ts",
+    "worka-prebuilt/contract/references/types/messages.d.ts",
+    "worka-prebuilt/contract/references/types/view-compact.d.ts",
+    "worka-prebuilt/contract/references/types/actions.d.ts",
+    "worka-prebuilt/contract/references/types/view.d.ts",
+    "worka-prebuilt/contract/SKILL.md",
+    "worka-prebuilt/contract/manifest.json",
+    "worka-prebuilt/view-hvxe8x7h.css",
+    "worka-prebuilt/manifest.json"
+  ]
+}

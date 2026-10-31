@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "name": "试玩",
+  "scenarios": "开发者：将关联 Todo 产出的前端页面或服务版本跑起来，在合入前检查效果。",
+  "locales": {
+    "en": {
+      "name": "Candidate preview",
+      "summary": "Run a candidate build from the linked Todo and check it before it is merged, including failures and fix feedback."
+    }
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "SKILL.md",
+    "actions.ts",
+    "assets.d.ts",
+    "document.ts",
+    "harbor.svg",
+    "harbor.tsx",
+    "icon.svg",
+    "messages.ts",
+    "model.ts",
+    "package.json",
+    "preview.css",
+    "projection.ts",
+    "record-links.tsx",
+    "routes.tsx",
+    "schemas.ts",
+    "state.ts",
+    "view-compact.tsx",
+    "view-expanded.tsx",
+    "view-model.tsx",
+    "view-report.tsx",
+    "view.tsx",
+    "campaign-art.json",
+    "preview-compact.css"
+  ],
+  "icon": {
+    "type": "svg",
+    "path": "icon.svg",
+    "monochrome": true
+  },
+  "onboarding": {
+    "title": "查看执行成果的预览",
+    "description": "关联 Todo 产出可运行版本后，预览会出现在这里。",
+    "steps": [
+      "先在关联 Todo 中查看任务是否已有可预览的版本。",
+      "没有版本时不会自动启动项目。",
+      "有了版本后，会分别显示准备、运行和检查的结果；能启动不代表已经验收。"
+    ],
+    "locales": {
+      "en": {
+        "title": "Preview execution results",
+        "description": "Runnable candidates from the linked Todo appear here.",
+        "steps": [
+          "Check the linked Todo to see whether the task has produced a candidate.",
+          "Projects do not start automatically when there are no candidates.",
+          "Candidates show preparation, runtime and verification separately. Starting is not acceptance."
+        ]
+      }
+    }
+  },
+  "sharing": {
+    "state": [
+      "title",
+      "attached"
+    ],
+    "stateResources": [
+      "view"
+    ],
+    "previews": true,
+    "statePaths": [
+      "candidates.*.key",
+      "candidates.*.title",
+      "candidates.*.receivedAt",
+      "candidates.*.featureId",
+      "candidates.*.desired.*",
+      "candidates.*.surfaces.*.name",
+      "candidates.*.surfaces.*.title",
+      "candidates.*.surfaces.*.url",
+      "candidates.*.status.*.phase",
+      "candidates.*.status.*.pass",
+      "candidates.*.status.*.since",
+      "candidates.*.status.*.updatedAt",
+      "candidates.*.status.*.url",
+      "candidates.*.status.*.verified.ok",
+      "candidates.*.status.*.failure.step",
+      "candidates.*.status.*.failure.owner",
+      "candidates.*.status.*.failure.handling"
+    ],
+    "records": [
+      {
+        "collection": "candidates",
+        "into": "candidates",
+        "key": "id",
+        "value": "view",
+        "shape": "array"
+      }
+    ],
+    "document": {
+      "collection": "metadata",
+      "id": "root"
+    }
+  },
+  "prerequisites": [
+    {
+      "name": "extension.game-project.status",
+      "connection": "game",
+      "optional": true
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "packageName": "@kllilizxc/worka-cardgame-project",
+  "version": "1.0.0",
+  "entry": "index.mjs",
+  "capabilities": [
+    "game-project"
+  ],
+  "files": {
+    ".gitattributes": "d6504560a89539dfc9e0a7d9d0b37e48d526efd4b5d52f12d836704ba5545256",
+    "LICENSE": "3cd5a7b5de3c6f613966844f184149fb859ff4fe216109e732a2cc7489829d19",
+    "cordis.patch.yml": "dc745bd0ebc79c13ed4e8bf43e466c5702b1d549d29d4272b5d23645c2f3861e",
+    "index.mjs": "4c09d1c97f1b0bc0dba20f34c023b5aa2527bbf6fc68cf6b26da24bbdc838820",
+    "package.json": "9f185a40686602566bdea6822269dceb863913423afcd9d3e29d6bdc7b5a0317"
+  },
+  "dataVersion": 1,
+  "integrity": "sha256-04e7389e5de2fe40227a6789eef7db9eb9fcac50601160ac2790d453c68203a0"
+}

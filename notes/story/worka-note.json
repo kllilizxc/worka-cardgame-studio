@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "name": "剧情知识库",
+  "scenarios": "查阅游戏剧情原文、分支和关联记录。",
+  "icon": {
+    "type": "svg",
+    "path": "icon.svg",
+    "monochrome": true
+  },
+  "files": [
+    "README.md",
+    "SKILL.md",
+    "actions.ts",
+    "assets.d.ts",
+    "icon.svg",
+    "mermaid.tsx",
+    "messages.ts",
+    "model.ts",
+    "package.json",
+    "reader.tsx",
+    "state.ts",
+    "story-tree.ts",
+    "story.css",
+    "view-compact.tsx",
+    "view-expanded.tsx",
+    "view.tsx",
+    "campaign-art.json",
+    "story-compact.css"
+  ],
+  "prerequisites": [
+    {
+      "name": "extension.game-project.status",
+      "connection": "game",
+      "optional": true
+    }
+  ]
+}

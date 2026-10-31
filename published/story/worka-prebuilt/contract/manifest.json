@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "codeVersion": "dd74c17ebc6bd9e747f5562ccce861b9aa41d9df3cbc577136af3bc125dd35c2",
+  "status": "ready",
+  "files": [
+    "SKILL.md",
+    "references/api.d.ts",
+    "references/types/actions.d.ts",
+    "references/types/mermaid.d.ts",
+    "references/types/messages.d.ts",
+    "references/types/model.d.ts",
+    "references/types/reader.d.ts",
+    "references/types/state.d.ts",
+    "references/types/story-tree.d.ts",
+    "references/types/view-compact.d.ts",
+    "references/types/view-expanded.d.ts",
+    "references/types/view.d.ts"
+  ],
+  "diagnostics": [],
+  "skill": {
+    "name": "cardgame-story",
+    "description": "从项目原文读取和修改剧情，沿章节、场景和选项定位。"
+  },
+  "typeErrors": []
+}

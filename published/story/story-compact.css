@@ -1,0 +1,130 @@
+ .atlas-story{--serif:"Songti SC","Noto Serif CJK SC","SimSun",Georgia,serif;--sans:system-ui,sans-serif;box-sizing:border-box;height:100dvh;width:100%;border:1px solid #c7bdab;border-radius:7px;background:radial-gradient(125% 110% at 50% -10%,#fbf5e9,#eee2cb 98%);color-scheme:light}.atlas-story *{box-sizing:border-box}:where(.atlas-story) button{background:transparent;border:0;color:inherit;font:inherit;cursor:pointer}.atlas-story button:focus-visible{outline:2px solid #437366;outline-offset:-2px}
+.atlas-panel.atlas-cards,
+.atlas-panel.atlas-story {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  isolation: isolate;
+  container-type: inline-size;
+  overflow: hidden;
+  padding: 0;
+  color: #282d26;
+}
+
+.cr-head {
+  flex: none;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 37px;
+  margin: 0 12px;
+  gap: 7px;
+  border-bottom: 1px solid #75634438;
+}
+.cr-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: #263d35;
+  font: 700 clamp(14px,4cqw,19px)/1.15 var(--serif,serif);
+}
+.cr-head h2 button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 0;
+  text-align: left;
+  font: inherit;
+}
+.cr-head h2 button > svg:first-child {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  stroke-width: 1.9;
+}
+.cr-next { flex: none; width: 11px; height: 15px; margin-left: auto; color: #666658; }
+.cr-head button:hover, .cr-chapter:hover strong, .cr-step:hover b { color: #34685e; }
+.cr-head button:focus-visible, .cr-chapter:focus-visible, .cr-step:focus-visible { outline-offset: -2px; }
+.cr-empty { display: grid; margin: auto; place-items: center; font-size: 13px; color: #767569; }
+
+.atlas-panel.atlas-cards {
+  background-color: #eee4d2;
+  background-image: radial-gradient(ellipse at 46% 82%, #b99c6b31, transparent 72%),linear-gradient(120deg, #fffdf685, #f6e6cf42);
+}
+.atlas-panel.atlas-story { background-color: #f7f2e6; }
+.cr-chapter {
+  display: grid;
+  grid-template-columns: 56% 44%;
+  flex: 1 1 0px;
+  min-height: 66px;
+  position: relative;
+  align-items: stretch;
+  text-align: left;
+  overflow: hidden;
+  color: inherit;
+  padding: 0;
+  margin: 8px 12px 5px;
+}
+.cr-chapter-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+  padding: 1px 5px 1px 0;
+}
+.cr-chapter-copy strong {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #2f3028;
+  font: 750 clamp(15px,4.45cqw,20px)/1.28 var(--serif,serif);
+}
+.cr-chapter-copy > span {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  color: #555348;
+  font: 500 clamp(11px,3.1cqw,14px)/1.48 var(--serif,serif);
+}
+.cr-chapter-image { overflow: hidden; border-radius: 4px; }
+.cr-chapter-image :is(img,svg) { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 58% 52%; mask-image: linear-gradient(90deg,transparent,#000 23%); }
+.cr-branch {
+  flex: none;
+  display: grid;
+  grid-template-columns: minmax(0,.98fr) clamp(22px,9.2cqw,45px) minmax(0,1fr);
+  align-items: center;
+  margin: 5px 12px 10px;
+}
+.cr-step {
+  display: flex;
+  align-items: center;
+  gap: clamp(5px,1.7cqw,9px);
+  width: 100%;
+  min-width: 0;
+  height: clamp(29px,9.6cqw,45px);
+  overflow: hidden;
+  padding: 3px;
+  border: 1px solid #cfc0a6;
+  border-radius: 4px;
+  background: linear-gradient(110deg,#f3e9d4,#fbf6eaff 60%,#f2e9d8);
+  color: #34362f;
+  text-align: left;
+}
+.cr-step:hover { border-color: #819c91; background: #f7f5e9; }
+.cr-step > :is(img,svg) { display: block; flex: none; width: 36%; height: 100%; object-fit: cover; border-radius: 2px; }
+.cr-step b { overflow: hidden; font: 720 clamp(10px,3.1cqw,14px)/1.3 var(--serif,serif); text-overflow: ellipsis; white-space: nowrap; }
+.cr-choices { display: grid; gap: 5px; }
+.cr-wires { align-self: stretch; width: 100%; height: 100%; min-height: 0; fill: none; stroke: #648f9e; stroke-linecap: round; stroke-linejoin: round; }
+.cr-wires path { vector-effect: non-scaling-stroke; stroke-width: 1.15; }
+
+
+.cr-step{box-shadow:0 1px 2px #74634115}.cr-chapter-copy > span{-webkit-line-clamp:2}
