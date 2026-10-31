@@ -6703,7 +6703,7 @@ var referenceConfigSchema = looseObject({
   initialScene: string2().optional()
 });
 var note = defineNote({
-  config: { schema: referenceConfigSchema, defaults: { resources: [] } },
+  config: { schema: referenceConfigSchema.partial({ resources: true }), defaults: { resources: [] } },
   update: {
     dataVersion: "cardgame-story@1",
     checks: [{

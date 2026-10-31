@@ -27,6 +27,13 @@ export async function verifyProvider({app,installed,engine,byKey,source}) {
     const receipt=await invoke('bind',{source:root});
     assert.equal(receipt.commit,expected.commit);assert.equal(receipt.root,root);
     await until(()=>referenceNotes.every(k=>observed.get(k)?.ready&&observed.get(k)?.commit===expected.commit),'已打开便笺未自动收到项目连接状态');
+    for(const key of referenceNotes){
+      const noteId=byKey.get(key);
+      const readiness=await app.resources.read({name:'note.readiness',input:{noteId}},{workspace:app.workspaceRoot,access:'user'});
+      assert.equal(readiness.error,undefined,key);
+      assert.equal(readiness.data.initialization.blocked,false,key+' remains blocked after binding');
+      assert.equal(readiness.data.initialization.state,'verified',key+' did not verify');
+    }
     for(const key of catalogKeys){
       const index=await engine.query(byKey.get(key),'collection',{sort:'name',page:1});
       assert.equal(index.count,expected.catalog[key].initialConfig.records.length,key+' bound record count');

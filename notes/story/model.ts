@@ -24,7 +24,7 @@ export type Data = z.infer<typeof referenceStateSchema> & z.infer<typeof referen
 export type ReferenceState = z.infer<typeof referenceStateSchema>;
 
 export const note = defineNote({
-  config: { schema: referenceConfigSchema, defaults: {resources:[]} },
+  config: { schema: referenceConfigSchema.partial({resources:true}), defaults: {resources:[]} },
   update: {
     dataVersion: 'cardgame-story@1',
     checks: [{

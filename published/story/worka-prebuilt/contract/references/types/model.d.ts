@@ -69,13 +69,13 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{}, z.ZodO
         provider: z.ZodString;
         connectionId: z.ZodString;
     }, z.core.$strip>>>;
-    resources: z.ZodArray<z.ZodObject<{
+    resources: z.ZodOptional<z.ZodArray<z.ZodObject<{
         title: z.ZodString;
         path: z.ZodString;
         root: z.ZodOptional<z.ZodString>;
         linkBase: z.ZodOptional<z.ZodString>;
         revision: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
+    }, z.core.$strip>>>;
     storyIndex: z.ZodOptional<z.ZodArray<z.ZodObject<{
         id: z.ZodString;
         title: z.ZodString;
