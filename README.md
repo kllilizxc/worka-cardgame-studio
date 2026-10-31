@@ -46,6 +46,7 @@ node tools/setup.mjs --desktop <桌面ID>
 
 - `notes/` 是五套便笺的可维护源码。七张内容便笺共用 `notes/catalog`，发布时各自获得一个可独立激活的目录。
 - `published/` 是 Worka 发布编译器生成并校验的产物。不要手改清单或哈希。随包游戏索引取自 CardGame，展示示例单独存放在 examples/qingyun。
+- 九张游戏便笺都在 `desktop.json` 的 `initialConfig.connections.game` 中声明 `{"provider":"game-project","connectionId":"game-project"}`，并在前提和资源读取中使用 `game` 别名。点子库、制作待办可独立使用。
 - `provider/` 维护本机项目绑定和共享索引。在包作者环境运行 `bun tools/build-provider.mjs /你的路径/dsh-worka-bench` 更新原生后台制品。
 - `connections/` 包含原生连线定义，`playtest/` 包含候选预览适配器，`tools/` 包含索引和绑定工具。运行 `node --test` 检查本仓库，设置 `CARDGAME_ROOT` 可对真实游戏数据执行回归。
 - 刷新可发布的游戏内容时运行 `node tools/setup.mjs --game /你的路径/CardGame --release`。这一步生成**可移植**的配置和静态 links。日常绑定不加 `--release`。发布时整份初始清单须小于 1.9 MiB。较大的项目先导入随包内容，再绑定自己的仓库。绑定时剧情正文按需读取原文件，每张便笺的索引预算为 5.9 MiB；超过时会在写入前报告是哪一张。

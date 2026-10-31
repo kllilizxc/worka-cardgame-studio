@@ -29,7 +29,7 @@ async function fixture(dir){
   }
   const values=new Map(),host={dataRoot:join(dir,'worka-data'),app:{
     core:{readRecord:async(table,k)=>({value:records.get(table+'/'+k)}),writeRecord:async(table,k,v)=>records.set(table+'/'+k,v),
-      getNote:async id=>({value:notes.get(id)}),getSession:async id=>({value:id==='desktop-one'?{desktopId:'one'}:id==='note-one'?{desktopId:'one',noteId:'one-cards'}:undefined})},
+      getNote:async id=>({value:notes.get(id)}),getSession:async id=>({value:id.startsWith('desktop-')?{desktopId:id.slice(8)}:id==='note-one'?{desktopId:'one',noteId:'one-cards'}:undefined})},
     dispatch:async(method,input)=>{if(method==='desktop.source')return desks[input.desktopId];
       if(method==='connection.get')return {enabled:true,revision:1};
       if(method==='connection.update'){values.set(input.id,(values.get(input.id)||0)+1);return {};}throw Error(method);}
@@ -37,7 +37,7 @@ async function fixture(dir){
   return {game,host,desks,notes,values};
 }
 const asDesktop={kind:'agent',sessionId:'desktop-one'};
-function ctx(noteId){return {scope:{noteId,caller:{kind:'user'},providerConnection:reference},signal:new AbortController().signal};}
+function ctx(noteId){return {scope:{noteId,caller:{kind:'user'},providerConnection:{...reference,desktopId:noteId.split('-')[0]}},signal:new AbortController().signal};}
 function status(provider,id){return provider.resources.status.load({},ctx(id));}
 function index(provider,id){return provider.resources.index.query.load({},ctx(id));}
 test('one binding projects each selected note, restarts and refreshes dirty files without crossing desktops',async()=>{
@@ -82,6 +82,39 @@ test('one binding projects each selected note, restarts and refreshes dirty file
   await assert.rejects(restored.invoke('refresh',{},asDesktop),/cards.*上限/);
   assert.equal((await index(restored,'one-cards')).records.length,3000);
  }finally{await rm(root,{recursive:true,force:true});}
+});
+test('the published aliases bind different checkouts when the same desktop is imported twice',async()=>{
+  const template=JSON.parse(await readFile(join(repo,'desktop.json'),'utf8'));
+  const members=template.notes.filter(note=>note.initialConfig?.connections?.game);
+  assert.deepEqual(members.map(note=>note.key).sort(),['cards','encounter','map','media','monsters','people','preview','shop','story']);
+  for(const member of members)assert.deepEqual(member.initialConfig.connections.game,reference);
+
+  const root=await mkdtemp(join(tmpdir(),'game-project-imports-'));
+  try{
+    const {host,game}=await fixture(root),provider=gameProject(host);
+    const shared=desktopId=>({kind:'agent',sessionId:'desktop-'+desktopId,providerConnection:{...reference,desktopId}});
+    const second=join(root,'second-checkout');
+    git(root,'clone','-q',game,second);
+    await provider.invoke('bind',{source:game},shared('one'));
+    assert.equal((await status(provider,'two-cards')).configured,false);
+    await provider.invoke('bind',{source:second},shared('two'));
+    assert.equal((await index(provider,'one-preview')).gameRoot,game);
+    assert.equal((await index(provider,'two-preview')).gameRoot,second);
+
+    const other={...shared('one'),providerConnection:shared('two').providerConnection};
+    await assert.rejects(provider.invoke('bind',{source:game},other),/不属于当前桌面/);
+    await assert.rejects(provider.invoke('bind',{source:game,desktopId:'two'},shared('one')),/当前桌面/);
+    const wrongConnection={...shared('one'),providerConnection:{...reference,connectionId:'other',desktopId:'one'}};
+    await assert.rejects(provider.invoke('bind',{source:game},wrongConnection),/未绑定/);
+    await assert.rejects(provider.invoke('bind',{source:game},{...shared('one'),noteId:'one-cards'}),/桌面级/);
+    await assert.rejects(provider.resources.status.load({},{scope:{...ctx('one-cards').scope,providerConnection:shared('two').providerConnection}}),/不属于当前桌面/);
+
+    await rm(second,{recursive:true});
+    assert.equal((await status(provider,'two-cards')).configured,false);
+    assert.equal((await status(provider,'one-cards')).ready,true);
+    await provider.invoke('bind',{source:game},shared('two'));
+    assert.equal((await status(provider,'two-cards')).ready,true);
+  }finally{await rm(root,{recursive:true,force:true});}
 });
 test('partial link activation restores the prior source and retry commits once',async()=>{
  const root=await mkdtemp(join(tmpdir(),'game-project-rollback-'));

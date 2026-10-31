@@ -585,8 +585,11 @@ function writable(caller) {
 }
 async function desktopForCommand(app, caller, requested) {
   writable(caller);
-  if (caller.noteId || caller.controlNoteId || caller.providerConnection)
+  if (caller.noteId || caller.controlNoteId)
     throw Error("请选择桌面级的游戏项目设置");
+  const connection = caller.providerConnection;
+  if (connection && (caller.kind !== "agent" || !caller.sessionId || connection.provider !== name || connection.connectionId !== name || !connection.desktopId))
+    throw Error("当前对话未绑定此游戏项目连接");
   if (caller.kind === "user" && !caller.sessionId) {
     if (typeof requested !== "string" || !requested.trim())
       throw Error("请选择目标桌面");
@@ -595,6 +598,8 @@ async function desktopForCommand(app, caller, requested) {
   const s = (await app.core.getSession(caller.sessionId))?.value;
   if (!s?.desktopId || s.noteId || s.skillConnectionId || s.delegationId || s.purpose || s.contextMode === "task" || s.agentObject || s.parentSessionId || caller.noteId || requested && requested !== s.desktopId)
     throw Error("请通过当前桌面的原生对话连接项目");
+  if (connection && connection.desktopId !== s.desktopId)
+    throw Error("游戏项目连接不属于当前桌面");
   return s.desktopId;
 }
 async function binding(app, id) {
@@ -665,6 +670,8 @@ function gameProject(host) {
     const note = (await app.core.getNote(noteId))?.value;
     if (!note?.desktopId || note.archived)
       throw Error("游戏便笺已移除");
+    if (connection.desktopId !== note.desktopId)
+      throw Error("游戏项目连接不属于当前桌面");
     const b = await binding(app, note.desktopId), kind = b && kindOf(b, noteId);
     if (b && !kind)
       throw Error("便笺不属于已绑定桌面的内容库");
@@ -693,7 +700,7 @@ function gameProject(host) {
       await access(join4(directory(id), "snapshots", b.snapshot, "story.json"));
       return { ready: true, configured: true, verifiedAt: b.verifiedAt, label: "游戏仓库", commit: b.commit };
     } catch {
-      return { configured: true, ready: false, message: "无法读取已绑定的游戏目录。请在桌面对话重新连接或刷新。" };
+      return { configured: false, ready: false, message: "无法读取已绑定的游戏目录。" + missingMessage };
     }
   }
   async function index(_, ctx) {

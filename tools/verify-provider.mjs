@@ -12,8 +12,11 @@ async function until(check,label) {
 export async function verifyProvider({app,installed,engine,byKey,source}) {
   if(!source)return;
   const root=await realpath(source),expected=await projectData(root),observed=new Map(),leases=[];
-  const providerConnection={provider:'game-project',connectionId:'game-project'};
-  const invoke=(method,fields)=>app.dispatch('extension.invoke',{extension:'game-project',method,input:{desktopId:installed.id,...fields}},{kind:'user'});
+  const providerConnection={provider:'game-project',connectionId:'game-project',desktopId:installed.id};
+  // The model harness is offline. Seed only the shared session identity, then use the actual dispatch and published provider.
+  const sessionId='test-game-project-setup';
+  await app.core.saveSession({id:sessionId,desktopId:installed.id,setupConnection:providerConnection,updatedAt:Date.now()});
+  const invoke=(method,input)=>app.dispatch('extension.invoke',{extension:'game-project',method,input},{kind:'agent',sessionId});
   try{
     for(const key of referenceNotes){
       const noteId=byKey.get(key);

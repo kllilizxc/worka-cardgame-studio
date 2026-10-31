@@ -19,9 +19,10 @@ export async function captureWorkbench({app,host,desktopId,notes,output,bindGame
   let browser;
   try {
     const theme=process.env.WORKA_QA_THEME||'dark';
-    browser=await chromium.launch({headless:true,executablePath:process.env.WORKA_QA_CHROMIUM,args:['--no-sandbox','--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
+    const picture=process.env.WORKA_QA_PICTURE==='1';
+    browser=await chromium.launch({headless:true,executablePath:process.env.WORKA_QA_CHROMIUM,args:['--no-sandbox','--disable-dev-shm-usage','--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader',...(picture?['--enable-blink-features=CanvasDrawElement']:[])]});
     const page=await browser.newPage({viewport:{width:1300,height:940},locale:'zh-CN',colorScheme:theme});
-    const picture=process.env.WORKA_QA_PICTURE==='1', saved=new Set();
+    const saved=new Set();
     let allPictures;
     const snapshotsReady=new Promise(done=>{allPictures=done;});
     const errors=[];page.on('pageerror',err=>errors.push(err.message));
@@ -51,6 +52,10 @@ export async function captureWorkbench({app,host,desktopId,notes,output,bindGame
       }));
       const frames=page.frames().filter(f=>f.url().includes('/view/index.html'));
       assert.equal(frames.length,notes.length);
+      // A larger host mask cuts through the border the compact note paints at each corner.
+      const surfaces=page.locator('.note-frontend-host[data-mode="compact"] .note-frontend-content:has(.runtime-note-frame[data-compact-surface="transparent"])');
+      await surfaces.nth(notes.length-1).waitFor({state:'attached'});
+      assert.ok(await surfaces.evaluateAll(items=>items.every(item=>getComputedStyle(item).borderRadius==='0px')),'each authored compact outline must remain intact');
       const panel=name=>{
         const record=notes.find(note=>note.value.name===name);
         assert.ok(record,name);
@@ -67,6 +72,11 @@ export async function captureWorkbench({app,host,desktopId,notes,output,bindGame
         console.log('Worka WebGL2 picture canvas · '+saved.size+' 张原生快照 · '+output);
         return;
       }
+      // Return through Worka's toolbar so the same desktop and its note frames stay resident.
+      const returnToDesk=async()=>{
+        await page.getByRole('button',{name:'关闭详情',exact:true}).click();
+        await page.locator('.note-frontend-host[data-mode="expanded"]').waitFor({state:'hidden'});
+      };
       const hand=panel('卡牌与牌组'),map=panel('秘境地图'),story=panel('剧情知识库');
       await hand.locator('.cr-card').nth(5).waitFor({state:'visible'});
       await map.locator('.atlas-pin').nth(1).waitFor({state:'visible'});
@@ -77,22 +87,22 @@ export async function captureWorkbench({app,host,desktopId,notes,output,bindGame
       console.log('Worka screenshot '+output+' · '+frames.length+' compact iframe(s)');
       await hand.getByRole('button',{name:'青云剑',exact:true}).click();
       await hand.getByRole('heading',{name:'青云剑',exact:true}).waitFor({state:'visible'});
-      await page.goto(url.href,{waitUntil:'domcontentloaded'});
+      await returnToDesk();
       const room=map.locator('.atlas-pin').first(),roomName=await room.locator('b').innerText();
       await room.click();await map.getByRole('heading',{name:roomName,exact:true}).waitFor({state:'visible'});
-      await page.goto(url.href,{waitUntil:'domcontentloaded'});
+      await returnToDesk();
       const branch=story.locator('.cr-choices button').first(),branchName=await branch.locator('b').innerText();
       await branch.click();await story.locator('[aria-current=page]').filter({hasText:branchName}).first().waitFor({state:'visible'});
-      await page.goto(url.href,{waitUntil:'domcontentloaded'});
+      await returnToDesk();
       const battle=panel('战斗关卡'),milestones=battle.locator('.atlas-timeline button');
       await battle.locator('.atlas-battle-title').waitFor({state:'visible'});
       if(await milestones.count()){
         await milestones.last().click();
         await battle.locator('li[aria-current=location]').waitFor({state:'visible'});
-        await page.goto(url.href,{waitUntil:'domcontentloaded'});
+        await returnToDesk();
       }
       for (const [name,role,label,expect] of [['剧情知识库','button','剧情知识库','章节文档'],['试玩','link','打开试玩','在 Worka 对话中说']]){
-        if(name==='试玩')await page.goto(url.href,{waitUntil:'domcontentloaded'});
+        if(name==='试玩')await returnToDesk();
         const note=panel(name);
         await note.getByRole(role,{name:label,exact:true}).click({timeout:25000});
         await note.getByText(expect,{exact:name==='剧情知识库'}).first().waitFor({state:'visible',timeout:25000});
@@ -113,13 +123,13 @@ export async function captureWorkbench({app,host,desktopId,notes,output,bindGame
       if(bindGame){
         const commit=await bindGame(),play=panel('试玩');
         await play.getByText(/在 Worka 对话中说「绑定我的 CardGame 仓库」/).waitFor({state:'hidden',timeout:15000});
-        await page.goto(url.href,{waitUntil:'domcontentloaded'});
+        await returnToDesk();
         await play.locator('.preview-caption').filter({hasText:commit.slice(0,7)}).waitFor({state:'visible'});
         console.log('已打开的试玩收到项目绑定，返回桌面后显示 '+commit.slice(0,7));
       }
     }catch(e){
       console.error('Worka browser diagnostics',errors.slice(-15),await Promise.all(page.frames().filter(f=>f.url().includes('/view/index.html')).map(async f=>[notes.find(n=>f.url().includes(n.key))?.value.name,await f.evaluate(()=>[document.readyState,document.body?.innerText.slice(0,95),document.body?.innerHTML.slice(0,155)]).catch(()=>null)])),(await page.locator('body').innerText()).slice(0,650));
-      await page.screenshot({path:output.replace(/\.png$/,'.diagnostic.png'),animations:'disabled'});throw e;
+      await page.screenshot({path:output.replace(/\.png$/,'.diagnostic.png'),timeout:5000}).catch(()=>{});throw e;
     }
   }finally{await browser?.close();http.close();server.closeAllConnections();await new Promise(done=>server.close(done));}
 }
