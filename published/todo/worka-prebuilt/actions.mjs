@@ -6569,11 +6569,20 @@ function collectionAccess(note, raw, writable) {
     declared(name);
     return freezeJson(await data(raw).get(name, key(id)));
   };
-  const read = { get, page: async (name, options = {}) => {
+  const page = async (name, options = {}) => {
     const request = validatePageOptions(declared(name), options);
     assertJson(request);
     return freezeJson(await data(raw).page(name, request));
-  } };
+  };
+  const list = async (name, options = {}) => {
+    if (Object.keys(options).some((key) => key !== "where" && key !== "orderBy"))
+      throw new Error("list accepts only where and orderBy");
+    const result = await page(name, options);
+    if (result.next !== undefined)
+      throw new Error("Incomplete collection read. Use ctx.db.page and follow its cursor to read the complete result.");
+    return result.items;
+  };
+  const read = { get, page, list };
   if (!writable)
     return Object.freeze(read);
   return Object.freeze({

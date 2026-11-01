@@ -16,6 +16,7 @@ var __export = (target, all) => {
 // actions.ts
 var exports_actions = {};
 __export(exports_actions, {
+  asset: () => asset,
   collection: () => collection,
   home: () => home,
   indexRevision: () => indexRevision,
@@ -6424,11 +6425,20 @@ function collectionAccess(note, raw, writable) {
     declared(name);
     return freezeJson(await data(raw).get(name, key(id)));
   };
-  const read = { get, page: async (name, options = {}) => {
+  const page = async (name, options = {}) => {
     const request = validatePageOptions(declared(name), options);
     assertJson(request);
     return freezeJson(await data(raw).page(name, request));
-  } };
+  };
+  const list = async (name, options = {}) => {
+    if (Object.keys(options).some((key) => key !== "where" && key !== "orderBy"))
+      throw new Error("list accepts only where and orderBy");
+    const result = await page(name, options);
+    if (result.next !== undefined)
+      throw new Error("Incomplete collection read. Use ctx.db.page and follow its cursor to read the complete result.");
+    return result.items;
+  };
+  const read = { get, page, list };
   if (!writable)
     return Object.freeze(read);
   return Object.freeze({
@@ -6715,7 +6725,8 @@ var recordSchema = object({
   diagram: array(object({ id: string2(), label: string2(), layer: number2(), kind: string2(), to: strings })).optional(),
   thumbnail: string2().optional(),
   mediaUrl: string2().optional(),
-  mediaKey: string2().optional()
+  mediaKey: string2().optional(),
+  portraits: array(object({ id: string2(), mediaKey: string2().optional(), thumbnail: string2().optional(), mediaUrl: string2().optional() })).optional()
 });
 var indexSchema = object({ connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional(), kind: kindSchema, revision: string2(), records: array(recordSchema) });
 var note = defineNote({ config: { schema: indexSchema, defaults: { kind: "cards", revision: "", records: [] } }, update: { dataVersion: "cardgame-catalog@1" } });
@@ -6766,20 +6777,7 @@ function search(rows, criteria) {
 }
 
 // home.ts
-var featured = {
-  map: ["jade-trial", "phase01-jade-cave-map"],
-  encounter: ["jade-warden", "mijing_boss_01"],
-  monsters: ["jade-fox", "CR_001"],
-  people: ["fox-elder", "npc.qa-fog-fox"],
-  shop: ["return-rope", "tool.return-rope"],
-  cards: ["jade-mist-deck", "deck:jade-mist-deck"],
-  media: []
-};
-var handOrder = [["jade-step-card", "FD_006"], ["jade-fox-card", "CR_001"], ["jade-sword", "AR_001"], ["jade-charm", "AR_002"], ["iron-armor", "AR_003"], ["spirit-seal", "TL_001"]];
 var audio = (row) => row.facets["媒介"]?.includes("声音") || /\.(?:mp3|aac|wav|oga|ogg|flac|m4a)$/i.test(row.source);
-function choose(rows, ids) {
-  return ids.map((id) => rows.find((r) => r.id === id)).find((r) => !!r);
-}
 function cap(row) {
   return {
     ...row,
@@ -6791,19 +6789,20 @@ function cap(row) {
   };
 }
 function homeRecords(kind, rows) {
-  const first = choose(rows, featured[kind]);
   let records = [];
   if (kind === "cards") {
-    const deck = first?.group === "牌组" ? first : undefined;
     const cards = rows.filter((r) => r.group !== "牌组");
+    const hasArt = new Set(cards.filter((r) => r.mediaKey || r.thumbnail).map((r) => r.id));
+    const score = (row) => row.refs.filter((ref) => ref.note === "cards" && hasArt.has(ref.id)).length;
+    const deck = rows.filter((r) => r.group === "牌组").sort((a, b) => score(b) - score(a))[0];
     const pool = deck ? cards.filter((r) => deck.refs.some((ref) => ref.note === "cards" && ref.id === r.id)) : cards;
-    const preferred = handOrder.map((ids) => choose(pool, ids)).filter((r) => !!r);
-    records = [...deck ? [deck] : [], ...[...new Set([...preferred, ...pool])].slice(0, 6)];
+    const pictured = pool.filter((r) => r.mediaKey || r.thumbnail), plain = pool.filter((r) => !r.mediaKey && !r.thumbnail);
+    records = [...deck ? [deck] : [], ...[...pictured, ...plain].slice(0, 6)];
   } else if (kind === "media") {
-    const portrait = rows.find((r) => r.group === "人设" || r.group === "立绘"), background = rows.find((r) => r.group === "背景" && r.source.includes("/qa-fog/apothecary-exterior")) || rows.find((r) => r.group === "背景"), sound = rows.find(audio);
+    const portrait = rows.find((r) => r.group === "人设" || r.group === "立绘"), background = rows.find((r) => r.group === "背景"), sound = rows.find(audio);
     records = [...new Set([portrait, background, sound, ...rows].filter((r) => !!r))].slice(0, 3);
   } else {
-    const focus = first || (kind === "map" ? rows.find((r) => r.diagram?.length) : undefined) || rows[0];
+    const focus = (kind === "map" ? rows.find((r) => r.diagram?.length) : kind === "encounter" ? rows.find((r) => r.portraits?.some((p) => p.mediaKey || p.thumbnail)) : rows.find((r) => r.mediaKey || r.thumbnail)) || rows[0];
     if (focus) {
       records = [focus];
       if (kind === "shop") {
@@ -6827,6 +6826,15 @@ async function readIndex(ctx) {
     throw Error(snap.error);
   return snap.data == null ? config : indexSchema.parse(snap.data);
 }
+var asset = note.query({ visibility: "private", description: "读取已连接游戏中的实际素材。", input: object({ key: string2() }), output: string2().nullable() }, async (ctx, input) => {
+  const config = await ctx.config.read();
+  if (!config.connections?.game)
+    return null;
+  const snap = await ctx.resources.read({ name: "extension.game-project.asset", connection: "game", input });
+  if (snap.error)
+    throw Error(snap.error);
+  return snap.data ?? null;
+});
 var criteria = object({ facetQuery: string2().max(512).optional(), q: string2().max(1000).optional(), filters: record(string2(), array(string2())).optional(), page: number2().int().positive().optional(), sort: _enum(["default", "name"]).optional() });
 var summary = object({ id: string2(), title: string2(), group: string2(), body: string2(), thumbnail: string2().nullable(), mediaKey: string2().nullable(), summary: string2() });
 var collection = note.query({

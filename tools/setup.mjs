@@ -29,8 +29,7 @@ function checkSize(label,value,limit) {
 async function main(){
   if(args.release){
     const root=await realpath(args.game);
-    const {withPortableDemo}=await import('./portable-demo.mjs');
-    const data=await withPortableDemo(await projectData(root)),code=referenceCode(data.links);
+    const data=await projectData(root),code=referenceCode(data.links);
     const manifest=await portableDesktop(repo,data);
     checkSize('发行桌面，请减少随包的初始记录，再用 --game 绑定完整项目。',manifest,portableBytes);
     await writeChanged(join(repo,'connections/references/connection.ts'),code);

@@ -8,5 +8,5 @@
   "files": ["index.mjs", "cordis.patch.yml", "LICENSE"],
   "license": "MIT",
   "peerDependencies": {"@realiz3r/worka": ">=0.3.24 <0.4.0"},
-  "worka": {"dataVersion": 1, "resourceManifestVersion": 1, "resources": ["extension.game-project.status","extension.game-project.index","extension.game-project.document"]}
+  "worka": {"dataVersion": 1, "resourceManifestVersion": 1, "resources": ["extension.game-project.status","extension.game-project.index","extension.game-project.document","extension.game-project.asset"]}
 }

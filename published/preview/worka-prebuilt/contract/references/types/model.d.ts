@@ -558,6 +558,7 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{
     gameRoot: z.ZodOptional<z.ZodString>;
     gameCommit: z.ZodOptional<z.ZodString>;
     adapter: z.ZodOptional<z.ZodString>;
+    coverAsset: z.ZodOptional<z.ZodString>;
     previewDesk: z.ZodOptional<z.ZodObject<{
         home: z.ZodString;
         cli: z.ZodString;

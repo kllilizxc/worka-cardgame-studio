@@ -160,13 +160,22 @@ export const feedbackReport = note.query({visibility:'private',description:'打�
   });
 
 const gameEntry = z.object({kind:z.enum(['story','map','encounter']),resourceId:z.string().min(1),nodeId:z.string().optional()});
-const installation=z.object({adapter:z.string().optional(),gameRoot:z.string().optional(),gameCommit:z.string().optional()});
-export const gameInstallation=note.query({visibility:'private',description:'读取本机绑定的 CardGame 仓库与预览适配器。',output:installation},async ctx=>{
+const installation=z.object({adapter:z.string().optional(),gameRoot:z.string().optional(),gameCommit:z.string().optional(),coverAsset:z.string().optional()});
+export const gameInstallation=note.query({visibility:'private',description:'读取本机绑定的 CardGame 仓库与预览适配器。',output:installation},readInstallation);
+async function readInstallation(ctx:import('@dsh-workbench/runtime').NoteQueryContext<typeof note>){
   const config=await ctx.config.read();
   if(!config.connections?.game)return installation.parse(config);
   const snapshot=await ctx.resources.read({name:'extension.game-project.index',connection:'game',input:{}});
+
   if(snapshot.error)throw Error(snapshot.error);
   return installation.parse(snapshot.data??{});
+}
+export const gameCover=note.query({visibility:'private',description:'读取已连接游戏的背景素材。',output:z.string().nullable()},async ctx=>{
+  const {coverAsset}=await readInstallation(ctx);
+  if(!coverAsset)return null;
+  const snap=await ctx.resources.read<string|null>({name:'extension.game-project.asset',connection:'game',input:{id:coverAsset}});
+  if(snap.error)throw Error(snap.error);
+  return snap.data??null;
 });
 export const playGame=note.action({
   visibility:'public',description:'从绑定的真实 CardGame 仓库登记并运行一个完整提交，可指定剧情、秘境或战斗资源。无参数打开安装时的基线。',

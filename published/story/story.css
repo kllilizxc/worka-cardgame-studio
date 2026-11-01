@@ -30,3 +30,7 @@
 .map-stage li{display:flex;align-items:center}.map-node{display:inline-flex;align-items:center;flex:none;max-width:230px}.map-node>button{padding:0}.map-node .map-expand{padding:0 2px 0 8px;font-weight:bold;color:var(--wb-accent)}
 
 .story-prose nav button{border-radius:4px;background:#e4eddf;color:#355a44;text-decoration:none;padding:2px 7px;font-size:12px}.story-layout aside input:focus{outline:2px solid #79947a}.story-layout main{scrollbar-color:#b4c0ad transparent}
+:root[data-theme=dark] .story-app{--wb-paper:inherit;--wb-ink:inherit;--wb-muted:inherit;--wb-line:inherit;--wb-line-soft:inherit;--wb-surface:inherit;--wb-accent:inherit;--wb-accent-pale:inherit;color-scheme:dark;background:var(--wb-surface-deep)}
+:root[data-theme=dark] .story-toolbar .story-tabs,:root[data-theme=dark] .story-prose blockquote{background:var(--wb-surface-deep)}
+:root[data-theme=dark] .story-toolbar .story-tabs button[aria-pressed=true],:root[data-theme=dark] .story-prose nav button{background:var(--wb-surface);color:var(--wb-ink)}
+:root[data-theme=dark] .story-prose h1{color:var(--wb-ink)}

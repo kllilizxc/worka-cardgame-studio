@@ -32,7 +32,6 @@
     "view-model.tsx",
     "view-report.tsx",
     "view.tsx",
-    "campaign-art.json",
     "preview-compact.css"
   ],
   "icon": {

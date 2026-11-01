@@ -30,9 +30,13 @@ export declare const projectIndex: import("@dsh-workbench/runtime").NoteOperatio
         }, z.core.$strip>>>;
         nodeId: z.ZodOptional<z.ZodString>;
         storyId: z.ZodOptional<z.ZodString>;
+        backgroundAssetId: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>>;
     initialScene: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>, "query">;
+export declare const sceneAsset: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+    sceneId: z.ZodString;
+}, z.core.$strip>, z.ZodNullable<z.ZodString>, "query">;
 export declare const document: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
     resourcePath: z.ZodString;
     path: z.ZodOptional<z.ZodString>;
@@ -113,6 +117,7 @@ export declare const setStoryIndex: import("@dsh-workbench/runtime").NoteOperati
         }, z.core.$strip>>>;
         nodeId: z.ZodOptional<z.ZodString>;
         storyId: z.ZodOptional<z.ZodString>;
+        backgroundAssetId: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
     initialScene: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
@@ -139,5 +144,6 @@ export declare const scenes: import("@dsh-workbench/runtime").NoteOperation<z.Zo
         }, z.core.$strip>>>;
         nodeId: z.ZodOptional<z.ZodString>;
         storyId: z.ZodOptional<z.ZodString>;
+        backgroundAssetId: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
 }, z.core.$strip>, "query">;

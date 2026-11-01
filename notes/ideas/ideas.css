@@ -28,3 +28,9 @@
 .idea-detail h1 { margin-bottom:5px; }
 .idea-detail .idea-body { white-space:pre-wrap; overflow-wrap:anywhere; margin:20px 0; font-size:16px; }
 .idea-pager { margin-top:14px; }
+:root[data-theme=dark] .idea-room{color-scheme:dark;background:var(--wb-paper);color:var(--wb-ink)}
+:root[data-theme=dark] .idea-room h1,:root[data-theme=dark] .idea-record,:root[data-theme=dark] .idea-record:is(:hover,:focus-visible){color:var(--wb-ink)}
+:root[data-theme=dark] .idea-tools .idea-search,:root[data-theme=dark] .idea-room input,:root[data-theme=dark] .idea-room button,:root[data-theme=dark] .idea-record,:root[data-theme=dark] .idea-detail{background:var(--wb-surface);color:var(--wb-ink);border-color:var(--wb-line)}
+:root[data-theme=dark] .idea-record p,:root[data-theme=dark] .idea-room small,:root[data-theme=dark] .idea-empty,:root[data-theme=dark] .idea-search>svg{color:var(--wb-muted)}
+:root[data-theme=dark] .idea-room button[aria-pressed=true]{background:var(--wb-accent-pale);color:var(--wb-accent)}
+:root[data-theme=dark] .idea-return{color:var(--wb-accent)}

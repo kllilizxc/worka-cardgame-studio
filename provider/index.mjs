@@ -1,7 +1,8 @@
 import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {access,lstat,mkdir,mkdtemp,readFile,readdir,realpath,rename,rm,writeFile} from 'node:fs/promises';
+import {createRequire} from 'node:module';
+import {access,lstat,mkdir,mkdtemp,readFile,readdir,realpath,rename,rm,stat,writeFile} from 'node:fs/promises';
 import {dirname,extname,isAbsolute,join,relative,resolve,sep} from 'node:path';
 import {projectData,referenceCode,referenceNotes} from '../tools/studio.mjs';
 import {boundStoryConfig} from '../tools/story-index.mjs';
@@ -107,7 +108,7 @@ async function links(app,caller,project,items,signal){
 }
 function projectFiles(data,root,adapter){
   return {...Object.fromEntries(Object.entries(data.catalog).map(([k,v])=>[k,v.initialConfig])),
-    story:boundStoryConfig(data.story.initialConfig),preview:{gameCommit:data.commit,gameRoot:root,adapter}};
+    story:boundStoryConfig(data.story.initialConfig),preview:{gameCommit:data.commit,gameRoot:root,adapter,coverAsset:data.catalog.media.initialConfig.records.find(row=>row.source==='public/assets/bg.png')?.id}};
 }
 export function gameProject(host){
   const app=host.app,pending=new Map();
@@ -143,6 +144,29 @@ export function gameProject(host){
     }catch{return {configured:false,ready:false,message:'无法读取已绑定的游戏目录。'+missingMessage};}
   }
   async function index(_,ctx){const {id,kind,b}=await member(ctx);return readIndex(id,kind,b);}
+  async function asset(input,ctx){
+    const {id,b}=await member(ctx);
+    if(!b||(typeof input?.key!=='string'&&typeof input?.id!=='string'))return null;
+    const index=await readIndex(id,'media',b);
+    const row=index.records.find(item=>input.key?item.mediaKey===input.key:item.id===input.id);
+    if(!row)return null;
+    const formats={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.avif':'image/avif','.bmp':'image/bmp','.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.oga':'audio/ogg','.m4a':'audio/mp4','.aac':'audio/aac','.flac':'audio/flac','.opus':'audio/ogg'};
+    const mime=formats[extname(row.source).toLowerCase()];
+    if(!mime)return null;
+    const file=await inside(b.root,row.source);
+    if((await stat(file)).size>32*1024*1024)throw Error('素材超过预览大小上限');
+    const bytes=await readFile(file);
+    if(row.mediaKey!==row.source+'?v='+digest(bytes).slice(0,16))throw Error('素材已变化，请刷新游戏索引');
+    let preview=bytes,previewMime=mime;
+    if(mime.startsWith('image/')&&bytes.length>256*1024){
+      const require=createRequire(import.meta.url);
+      const sharp=createRequire(require.resolve('@realiz3r/worka/package.json'))('sharp');
+      preview=await sharp(bytes,{animated:false}).rotate().resize({width:600,height:600,fit:'inside',withoutEnlargement:true}).webp({quality:65,effort:2}).toBuffer();
+      previewMime='image/webp';
+    }
+    if(preview.length>700*1024)return null;
+    return 'data:'+previewMime+';base64,'+preview.toString('base64');
+  }
   async function doc(input,ctx){
     const {id,kind,b}=await member(ctx);
     if(!b)return null;
@@ -211,7 +235,7 @@ export function gameProject(host){
   // CoreStore reads register dependency stamps, invalidated by the committed write above.
   const resource=load=>({access:'owner',version:'1',load,query:{load}});
   return {
-    resources:{status:resource(status),index:resource(index),document:resource(doc)},
+    resources:{status:resource(status),index:resource(index),document:resource(doc),asset:resource(asset)},
     initializers:{status:async()=>{}},
     async invoke(method,input,caller,signal){
       if(method!=='bind'&&method!=='refresh')throw Error('未知游戏项目操作 '+method);

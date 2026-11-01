@@ -25,3 +25,6 @@
 .play-room .play-placeholder { padding:0; overflow:hidden; width:100%; margin:0 auto; max-width:920px; border:1px solid var(--play-border); border-radius:10px; background:var(--play-paper); }
 .play-placeholder .play-art { height:clamp(160px,30vh,320px); }
 .play-placeholder p { margin:0; padding:16px 18px; line-height:1.6; }
+:root[data-theme=dark] .play-feature,:root[data-theme=dark] .play-room{--play-paper:var(--wb-surface);--play-ink:var(--wb-ink);--play-border:var(--wb-line);--play-muted:var(--wb-muted);color-scheme:dark}
+:root[data-theme=dark] .play-room{background:var(--wb-paper)}
+:root[data-theme=dark] .play-room select,:root[data-theme=dark] .play-room button{background:var(--wb-surface)}

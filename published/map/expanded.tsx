@@ -10,6 +10,7 @@ type Api=typeof import('./actions');
 const recordPath=(id:string)=>'records/'+encodeURIComponent(id).replace(/~/g,'%7E');
 function mediaType(path:string){return /\.(mp3|m4a|aac|flac|wav|ogg|opus|oga)$/i.test(path.split('?v=')[0])?'audio':'image';}
 function Artwork({file,link,title,large=false}:{file?:string|null;link?:string|null;title:string;large?:boolean}){
+  const note=useNote<Api>(),asset=note.useQuery('asset',{key:file||''},{enabled:!!file});
   const [content,setContent]=useState<{file:string;uri:string|null}|null>(null);
   const audio=file&&mediaType(file)==='audio';
   useEffect(()=>{
@@ -18,7 +19,7 @@ function Artwork({file,link,title,large=false}:{file?:string|null;link?:string|n
     return ()=>{live=false;};
   },[file,audio,large]);
   if(audio&&!large)return <span className="cg-sound">♫</span>;
-  const src=file?(content?.file===file?content.uri||link:null):link;
+  const src=asset.data||(file?(content?.file===file?content.uri||link:null):link);
   if(!src)return null;
   return audio?<audio controls aria-label={title} preload="none" src={src}/>:<img loading="lazy" decoding="async" alt={large?title:''} src={src}/>;
 }

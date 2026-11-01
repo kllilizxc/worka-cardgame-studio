@@ -52,8 +52,17 @@ export declare const projectIndex: import("@dsh-workbench/runtime").NoteOperatio
         thumbnail: z.ZodOptional<z.ZodString>;
         mediaUrl: z.ZodOptional<z.ZodString>;
         mediaKey: z.ZodOptional<z.ZodString>;
+        portraits: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            mediaKey: z.ZodOptional<z.ZodString>;
+            thumbnail: z.ZodOptional<z.ZodString>;
+            mediaUrl: z.ZodOptional<z.ZodString>;
+        }, z.core.$strip>>>;
     }, z.core.$strip>>;
 }, z.core.$strip>, "query">;
+export declare const asset: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+    key: z.ZodString;
+}, z.core.$strip>, z.ZodNullable<z.ZodString>, "query">;
 export declare const collection: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
     facetQuery: z.ZodOptional<z.ZodString>;
     q: z.ZodOptional<z.ZodString>;
@@ -134,6 +143,12 @@ export declare const home: import("@dsh-workbench/runtime").NoteOperation<z.ZodO
         thumbnail: z.ZodOptional<z.ZodString>;
         mediaUrl: z.ZodOptional<z.ZodString>;
         mediaKey: z.ZodOptional<z.ZodString>;
+        portraits: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            mediaKey: z.ZodOptional<z.ZodString>;
+            thumbnail: z.ZodOptional<z.ZodString>;
+            mediaUrl: z.ZodOptional<z.ZodString>;
+        }, z.core.$strip>>>;
     }, z.core.$strip>>;
 }, z.core.$strip>, "query">;
 export declare const overview: import("@dsh-workbench/runtime").NoteOperation<undefined, z.ZodObject<{
@@ -179,6 +194,12 @@ export declare const record: import("@dsh-workbench/runtime").NoteOperation<z.Zo
     thumbnail: z.ZodOptional<z.ZodString>;
     mediaUrl: z.ZodOptional<z.ZodString>;
     mediaKey: z.ZodOptional<z.ZodString>;
+    portraits: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        mediaKey: z.ZodOptional<z.ZodString>;
+        thumbnail: z.ZodOptional<z.ZodString>;
+        mediaUrl: z.ZodOptional<z.ZodString>;
+    }, z.core.$strip>>>;
 }, z.core.$strip>>, "query">;
 export declare const indexRevision: import("@dsh-workbench/runtime").NoteOperation<undefined, z.ZodObject<{
     revision: z.ZodString;
@@ -231,6 +252,12 @@ export declare const replaceIndex: import("@dsh-workbench/runtime").NoteOperatio
         thumbnail: z.ZodOptional<z.ZodString>;
         mediaUrl: z.ZodOptional<z.ZodString>;
         mediaKey: z.ZodOptional<z.ZodString>;
+        portraits: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            mediaKey: z.ZodOptional<z.ZodString>;
+            thumbnail: z.ZodOptional<z.ZodString>;
+            mediaUrl: z.ZodOptional<z.ZodString>;
+        }, z.core.$strip>>>;
     }, z.core.$strip>>;
     expectedRevision: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{

@@ -128,3 +128,11 @@
 
 
 .cr-step{box-shadow:0 1px 2px #74634115}.cr-chapter-copy > span{-webkit-line-clamp:2}
+
+.cr-title-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cr-chapter:not(:has(.cr-chapter-image img)){grid-template-columns:1fr}.cr-chapter:not(:has(.cr-chapter-image img)) .cr-chapter-image{display:none}
+:root[data-theme="dark"] .atlas-story{color-scheme:dark;color:var(--wb-ink);background:var(--wb-surface);border-color:var(--wb-line)}
+:root[data-theme="dark"] .cr-head{border-color:var(--wb-line)}
+:root[data-theme="dark"] .cr-head h2,:root[data-theme="dark"] .cr-chapter-copy strong{color:var(--wb-ink)}
+:root[data-theme="dark"] .cr-chapter-copy>span,:root[data-theme="dark"] .cr-empty{color:var(--wb-ink-soft)}
+:root[data-theme="dark"] .cr-step{color:var(--wb-ink);background:var(--wb-surface-deep);border-color:var(--wb-line);box-shadow:none}
+:root[data-theme="dark"] .cr-head button:hover,:root[data-theme="dark"] .cr-chapter:hover strong,:root[data-theme="dark"] .cr-step:hover b{color:var(--wb-accent)}

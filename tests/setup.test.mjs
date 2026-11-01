@@ -15,6 +15,8 @@ const git=(dir,...args)=>execFileSync('git',['-C',dir,...args],{encoding:'utf8'}
 async function fixture(dir){
   const game=join(dir,'game'),desks={},records=new Map(),notes=new Map();
   for(const path of ['public/data/cards','knowledge'])await mkdir(join(game,path),{recursive:true});
+  await mkdir(join(game,'public/assets'),{recursive:true});
+  await writeFile(join(game,'public/assets/test.png'),'image-content');
   await writeFile(join(game,'public/data/cards/units.json'),JSON.stringify({units:[{id:'UNIT',kind:'unit',name:'测试灵狐',attack:2,health:3}]}));
   await writeFile(join(game,'public/data/content-catalog.json'),'{"resources":[]}');
   await writeFile(join(game,'knowledge/index.md'),'# 雾林\n\n原本的剧情');
@@ -54,6 +56,11 @@ test('one binding projects each selected note, restarts and refreshes dirty file
   assert.equal((await index(provider,'one-preview')).gameRoot,await realpath(f.game));
   assert.equal((await index(provider,'one-preview')).gameCommit,r.commit);
   const rows=await index(provider,'one-cards');assert.equal(rows.records[0].title,'测试灵狐');
+  const media=await provider.resources.asset.query.load({id:'asset:public/assets/test.png'},ctx('one-cards'));
+  assert.equal(media,'data:image/png;base64,'+Buffer.from('image-content').toString('base64'));
+  assert.equal(await provider.resources.asset.query.load({id:'asset:../../etc/passwd'},ctx('one-cards')),null);
+  await writeFile(join(f.game,'public/assets/test.png'),'changed');
+  await assert.rejects(provider.resources.asset.query.load({id:'asset:public/assets/test.png'},ctx('one-cards')),/刷新游戏索引/);
   const original=await index(provider,'one-story');assert.equal(original.storyIndex[0].body,'');
   const disk=await provider.resources.document.query.load({path:'knowledge/index.md'},ctx('one-story'));
   assert.match(disk.content,/原本的剧情/);
@@ -139,10 +146,10 @@ test('partial link activation restores the prior source and retry commits once',
 });
 test('GitHub URL uses a reusable managed checkout and never rewrites its working tree',async()=>{
  const root=await mkdtemp(join(tmpdir(),'game-project-remote-'));
- const key='GIT_CONFIG_GLOBAL',previous=process.env[key];
+ const key='HOME',previous=process.env[key];
  try{
   const f=await fixture(root),provider=gameProject(f.host),url='https://github.com/example/cardgame-fixture.git';
-  const config=join(root,'gitconfig');process.env[key]=config;
+  const config=join(root,'.gitconfig');process.env[key]=root;
   execFileSync('git',['config','--file',config,'url.file://'+f.game+'.insteadOf',url]);
   await writeFile(join(f.game,'.gitattributes'),'knowledge/index.md filter=project-test\n');
   git(f.game,'add','.gitattributes');git(f.game,'-c','user.name=Fixture','-c','user.email=test@example.invalid','-c','commit.gpgsign=false','commit','-qm','filter fixture');

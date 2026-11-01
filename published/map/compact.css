@@ -156,3 +156,13 @@ border-radius:4px;box-shadow:0 1px 4px #463c333d;color:#353d30;font:650 11px/1.2
 @media(prefers-reduced-motion:reduce){.cr-card{transition:none}}
 
 .atlas-media-strip .audio-sample{display:flex;flex-direction:column;min-width:0;flex:1;text-align:center}.audio-sample>button:last-of-type{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;text-align:center;font:600 10px/1.5 var(--serif)}.atlas-panel .audio-sample>.atlas-sound{position:relative;display:grid;place-content:center;flex:1;align-self:stretch;overflow:hidden;border:1px solid #bebba9;border-radius:3px;background:#e7ece3;color:#548183;font:11px var(--sans)}.audio-sample audio{display:none}
+
+.atlas-header button:first-child{min-width:0}.atlas-header svg,.atlas-header .atlas-more{flex:none}.atlas-title-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+:root[data-theme="dark"] .atlas-panel{color-scheme:dark;color:var(--wb-ink);background:var(--wb-surface);border-color:var(--wb-line)}
+:root[data-theme="dark"] .atlas-header{border-color:var(--wb-line)}
+:root[data-theme="dark"] .atlas-more,:root[data-theme="dark"] .atlas-summary,:root[data-theme="dark"] .atlas-map-title small,:root[data-theme="dark"] .atlas-sheet>span,:root[data-theme="dark"] .atlas-sheet small,:root[data-theme="dark"] .atlas-compass{color:var(--wb-ink-soft)}
+:root[data-theme="dark"] .atlas-panel button:hover{color:var(--wb-accent)}
+:root[data-theme="dark"] .atlas-map:before{background:none}
+:root[data-theme="dark"] .atlas-legend,:root[data-theme="dark"] .atlas-panel .atlas-pin,:root[data-theme="dark"] .atlas-battle-title small,:root[data-theme="dark"] .atlas-sheet em{background:var(--wb-surface-deep);color:var(--wb-ink);border-color:var(--wb-line)}
+:root[data-theme="dark"] .atlas-lineup button>span,:root[data-theme="dark"] .atlas-thumbnail,:root[data-theme="dark"] .atlas-empty-art,:root[data-theme="dark"] .atlas-sound{background:var(--wb-surface-deep);border-color:var(--wb-line);color:var(--wb-ink-soft)}
+:root[data-theme="dark"] .atlas-shop .atlas-thumbnail img{background:var(--wb-surface-deep)}

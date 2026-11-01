@@ -8,13 +8,13 @@
 
 在含[共享连接初始化](https://github.com/kllilizxc/dsh-worka-bench/pull/88)的 Worka 中，打开「导入桌面」。审查期间粘贴功能分支地址 `https://github.com/kllilizxc/worka-cardgame-studio/tree/feat/qingyun-native-studio`；合入后直接使用仓库地址 `https://github.com/kllilizxc/worka-cardgame-studio`。Worka 会安装十一张便笺、三条连线以及随桌面发布的 `game-project` 后台。接收者无需编译。1.x 用户可以把此版本导入为独立桌面。
 
-导入后可以直接浏览「雾林试炼」。点子和待办属于当前桌面的可编辑记录。山水路线上的地点、章节分支、叠放的牌面和增援事件分别打开对应记录。点便笺标题可进入总览。剧情知识库可切换章节与脑图，素材等内容库支持搜索、筛选和分页。
+导入后可以浏览随包的游戏索引。点子和待办属于当前桌面的可编辑记录。路线、章节分支、牌面和战斗事件分别打开对应记录。点便笺标题可进入总览。剧情知识库可切换章节与脑图，素材等内容库支持搜索、筛选和分页。
 
 ## 连接游戏
 
 在共享初始化对话中提供已检出的本地游戏目录，或可访问的 GitHub HTTPS 地址。开发中的本地修改会进入工作稿索引。提供 URL 时，Worka 在宿主机上为这个桌面建立游戏工作区。九张使用游戏内容的便笺共用本桌面的连接。另一个桌面可连接另一份游戏。
 
-桌面用随包示例展示六处青玉洞路线、二十四张试炼牌组和第四回合增援。这些设计示例保存在 `examples/qingyun`。连接成功后，故事、素材、敌阵和事件以选定游戏的真实文件为准。已打开的便笺会重新读取内容。试玩使用 Git 提交和游戏适配器，可从制作事项进入候选版本、从剧情或战斗记录启动定点试玩。
+连接成功后，故事、素材、敌阵和事件以选定游戏的真实文件为准。已打开的便笺会重新读取内容。试玩使用 Git 提交和游戏适配器，可从制作事项进入候选版本、从剧情或战斗记录启动定点试玩。
 
 在 Worka 原生对话里说「连接这份 CardGame 仓库」或「刷新游戏索引」即可。作者也可以在桌面源码目录调用同一个 provider。
 
@@ -45,7 +45,7 @@ node tools/setup.mjs --desktop <桌面ID>
 ## 开发与发布
 
 - `notes/` 是五套便笺的可维护源码。七张内容便笺共用 `notes/catalog`，发布时各自获得一个可独立激活的目录。
-- `published/` 是 Worka 发布编译器生成并校验的产物。不要手改清单或哈希。随包游戏索引取自 CardGame，展示示例单独存放在 examples/qingyun。
+- `published/` 是 Worka 发布编译器生成并校验的产物。不要手改清单或哈希。随包游戏索引取自 CardGame。
 - 九张游戏便笺都在 `desktop.json` 的 `initialConfig.connections.game` 中声明 `{"provider":"game-project","connectionId":"game-project"}`，并在前提和资源读取中使用 `game` 别名。点子库、制作待办可独立使用。
 - `provider/` 维护本机项目绑定和共享索引。在包作者环境运行 `bun tools/build-provider.mjs /你的路径/dsh-worka-bench` 更新原生后台制品。
 - `connections/` 包含原生连线定义，`playtest/` 包含候选预览适配器，`tools/` 包含索引和绑定工具。运行 `node --test` 检查本仓库，设置 `CARDGAME_ROOT` 可对真实游戏数据执行回归。

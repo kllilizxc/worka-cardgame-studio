@@ -1,0 +1,1 @@
+import{E}from"./entry-3z4f78y7.js";import{defineNoteView as e}from"@dsh-workbench/react";var r=e({compactSurface:"transparent",compact:()=>(E("tf138tqc"),import("./view-compact-tf138tqc.js")),expanded:()=>(E("9a5g1fr8"),import("./view-expanded-9a5g1fr8.js")),prerequisites:{configurationInView:!0}});export{r as default};

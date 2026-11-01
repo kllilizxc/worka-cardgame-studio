@@ -19,7 +19,7 @@ function GameScene({text,row,open}:{text:string;row:Scene;open(id:string):void})
 }
 function Article({text,path,markdown,onLink}:{text:string;path:string;markdown:boolean;onLink(href:string,from:string):void}){
   if(!markdown)return <pre>{text}</pre>;
-  return <Markdown remarkPlugins={[remarkGfm]} components={{pre:MarkdownPre,
+  return <Markdown skipHtml remarkPlugins={[remarkGfm]} components={{pre:MarkdownPre,
     a:({href,children})=>href&&/^(https?:\/\/|mailto:)/i.test(href)?<a href={href} target="_blank" rel="noreferrer">{children}</a>:
        <a href={href||'#'} onClick={e=>{e.preventDefault();if(href)onLink(href,'/'+path);}}>{children}</a>,
     img:({alt})=><span>{alt}</span>,

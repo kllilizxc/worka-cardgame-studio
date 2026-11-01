@@ -123,6 +123,7 @@ export function buildCatalog(root){
   for(const [f,e] of dataFiles('encounters')){
     const enemies=e.enemies||e.units||[];
     const r=add('encounter',e.id,e.name,'战斗',f,e.description);
+    r.portraits=enemies.map(u=>{const card=unitCards.get(u.cardId)?.r;return {id:u.cardId,...(card?.mediaKey?{mediaKey:card.mediaKey}:{}),...(card?.thumbnail?{thumbnail:card.thumbnail}:{})};});
     r.facets=labels({'难度':e.difficulty,'敌人':enemies.map(u=>unitCards.get(u.cardId)?.c.name||u.cardId),'特殊事件':(e.events||[]).map(v=>v.name||v.type||v.id)});
     r.fields=fields({'难度':e.difficulty,'出场单位':enemies.length});
     r.sections=[section('敌方阵位',enemies.map(u=>{

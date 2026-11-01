@@ -43,8 +43,7 @@
     "art/sound.svg",
     "art/map.svg",
     "art/fight.svg",
-    "home.ts",
-    "campaign-art.json"
+    "home.ts"
   ],
   "prerequisites": [
     {

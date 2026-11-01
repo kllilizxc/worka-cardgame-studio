@@ -30,6 +30,7 @@ __export(exports_actions, {
   feedbackReport: () => feedbackReport,
   feedbackReported: () => feedbackReported,
   forget: () => forget,
+  gameCover: () => gameCover,
   gameInstallation: () => gameInstallation,
   lan: () => lan,
   note: () => note,
@@ -6499,11 +6500,20 @@ function collectionAccess(note, raw, writable) {
     declared(name);
     return freezeJson(await data(raw).get(name, key(id)));
   };
-  const read = { get, page: async (name, options = {}) => {
+  const page = async (name, options = {}) => {
     const request = validatePageOptions(declared(name), options);
     assertJson(request);
     return freezeJson(await data(raw).page(name, request));
-  } };
+  };
+  const list = async (name, options = {}) => {
+    if (Object.keys(options).some((key) => key !== "where" && key !== "orderBy"))
+      throw new Error("list accepts only where and orderBy");
+    const result = await page(name, options);
+    if (result.next !== undefined)
+      throw new Error("Incomplete collection read. Use ctx.db.page and follow its cursor to read the complete result.");
+    return result.items;
+  };
+  const read = { get, page, list };
   if (!writable)
     return Object.freeze(read);
   return Object.freeze({
@@ -6975,6 +6985,7 @@ var configSchema = object({
   gameRoot: string2().optional(),
   gameCommit: string2().regex(/^[a-f0-9]{40}$/).optional(),
   adapter: string2().optional(),
+  coverAsset: string2().optional(),
   previewDesk: object({ home: string2(), cli: string2() }).optional(),
   feedbackInTodo: boolean2().optional(),
   projectId: string2().optional(),
@@ -7193,8 +7204,9 @@ var feedbackReport = note.query({ visibility: "private", description: "打开一
   return (await ctx.db.get("feedbackHistory", input.id))?.report ?? null;
 });
 var gameEntry = object({ kind: _enum(["story", "map", "encounter"]), resourceId: string2().min(1), nodeId: string2().optional() });
-var installation = object({ adapter: string2().optional(), gameRoot: string2().optional(), gameCommit: string2().optional() });
-var gameInstallation = note.query({ visibility: "private", description: "读取本机绑定的 CardGame 仓库与预览适配器。", output: installation }, async (ctx) => {
+var installation = object({ adapter: string2().optional(), gameRoot: string2().optional(), gameCommit: string2().optional(), coverAsset: string2().optional() });
+var gameInstallation = note.query({ visibility: "private", description: "读取本机绑定的 CardGame 仓库与预览适配器。", output: installation }, readInstallation);
+async function readInstallation(ctx) {
   const config = await ctx.config.read();
   if (!config.connections?.game)
     return installation.parse(config);
@@ -7202,6 +7214,15 @@ var gameInstallation = note.query({ visibility: "private", description: "读取�
   if (snapshot.error)
     throw Error(snapshot.error);
   return installation.parse(snapshot.data ?? {});
+}
+var gameCover = note.query({ visibility: "private", description: "读取已连接游戏的背景素材。", output: string2().nullable() }, async (ctx) => {
+  const { coverAsset } = await readInstallation(ctx);
+  if (!coverAsset)
+    return null;
+  const snap = await ctx.resources.read({ name: "extension.game-project.asset", connection: "game", input: { id: coverAsset } });
+  if (snap.error)
+    throw Error(snap.error);
+  return snap.data ?? null;
 });
 var playGame = note.action({
   visibility: "public",
