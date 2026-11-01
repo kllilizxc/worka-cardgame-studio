@@ -11,6 +11,13 @@ async function readIndex(ctx:import('@dsh-workbench/runtime').NoteQueryContext<t
   if(snap.error)throw Error(snap.error);
   return snap.data==null?config:indexSchema.parse(snap.data);
 }
+export const asset=note.query({visibility:'private',description:'读取已连接游戏中的实际素材。',input:z.object({key:z.string()}),output:z.string().nullable()},async(ctx,input)=>{
+  const config=await ctx.config.read();
+  if(!config.connections?.game)return null;
+  const snap=await ctx.resources.read<string|null>({name:'extension.game-project.asset',connection:'game',input});
+  if(snap.error)throw Error(snap.error);
+  return snap.data??null;
+});
 const criteria=z.object({facetQuery:z.string().max(512).optional(),q:z.string().max(1000).optional(),filters:z.record(z.string(),z.array(z.string())).optional(),page:z.number().int().positive().optional(),sort:z.enum(['default','name']).optional()});
 const summary=z.object({id:z.string(),title:z.string(),group:z.string(),body:z.string(),thumbnail:z.string().nullable(),mediaKey:z.string().nullable(),summary:z.string()});
 export const collection=note.query({

@@ -33,6 +33,12 @@ export declare function homeRecords(kind: Kind, rows: RecordRow[]): {
         thumbnail?: string | undefined;
         mediaUrl?: string | undefined;
         mediaKey?: string | undefined;
+        portraits?: {
+            id: string;
+            mediaKey?: string | undefined;
+            thumbnail?: string | undefined;
+            mediaUrl?: string | undefined;
+        }[] | undefined;
     }[];
 };
 export {};

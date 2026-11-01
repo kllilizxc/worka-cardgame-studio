@@ -13,7 +13,7 @@ export const sceneSchema = z.object({
   id:z.string(), title:z.string(), path:z.string(), folders:z.array(z.string()),
   search:z.string(), body:z.string(), choices:z.array(z.object({label:z.string(),to:z.string()})),
   refs:z.array(z.object({note:z.string(),id:z.string()})).optional(),
-  nodeId:z.string().optional(), storyId:z.string().optional(),
+  nodeId:z.string().optional(), storyId:z.string().optional(), backgroundAssetId:z.string().optional(),
 });
 export type Scene = z.infer<typeof sceneSchema>;
 export const referenceConfigSchema = z.looseObject({

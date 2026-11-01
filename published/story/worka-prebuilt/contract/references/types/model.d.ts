@@ -28,6 +28,7 @@ export declare const sceneSchema: z.ZodObject<{
     }, z.core.$strip>>>;
     nodeId: z.ZodOptional<z.ZodString>;
     storyId: z.ZodOptional<z.ZodString>;
+    backgroundAssetId: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export type Scene = z.infer<typeof sceneSchema>;
 export declare const referenceConfigSchema: z.ZodObject<{
@@ -59,6 +60,7 @@ export declare const referenceConfigSchema: z.ZodObject<{
         }, z.core.$strip>>>;
         nodeId: z.ZodOptional<z.ZodString>;
         storyId: z.ZodOptional<z.ZodString>;
+        backgroundAssetId: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>>;
     initialScene: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>;
@@ -93,6 +95,7 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{}, z.ZodO
         }, z.core.$strip>>>;
         nodeId: z.ZodOptional<z.ZodString>;
         storyId: z.ZodOptional<z.ZodString>;
+        backgroundAssetId: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>>;
     initialScene: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>>;

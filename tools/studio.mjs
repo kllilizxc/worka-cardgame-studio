@@ -54,8 +54,7 @@ export async function portableDesktop(repo,{catalog,story}){
   return {schemaVersion:6,version:'2.0.0',name,extensions:[{path:'published/game-project'}],camera:{x:32,y:104,scale:1},
     notes:tiles.map(([key,title,x,y,width,height])=>({key,name:title,source:{path:'published/'+key},
       layout:{x,y,width,height,autoHeight:false,expandedWidth:key==='preview'?1420:1180,expandedHeight:800},
-      ...(['ideas','todo'].includes(key)?{initialConfig:{includeExampleWork:true}}:{}),
       ...(referenceNotes.includes(key)?{initialConfig:{...(key==='story'?{...story.initialConfig,resources:[]}:catalog[key]?.initialConfig),connections:{game:{provider:'game-project',connectionId:'game-project'}}}}:{})})),
     relations:[...flow,{key:'references',name:'内容引用',goal:'导航到游戏记录、原文及可试玩的起点。',nodeKeys:referenceNotes,enabled:true,subscriptions:[],source:{path:'connections/references',noteBindings:Object.fromEntries(referenceNotes.map(key=>[alias(key),key]))}}],
-    sourceFiles:[...(await import('./portable-demo.mjs')).exampleFiles,'tools/portable-demo.mjs','AGENTS.md','README.md','LICENSE','docs/worka-home.png','playtest/preview.config.mjs','playtest/entry.mjs','playtest/serve.mjs','tools/catalog-index.mjs','tools/story-index.mjs','tools/studio.mjs','tools/setup.mjs','tools/worka-client.mjs','connections/relations.json']};
+    sourceFiles:['AGENTS.md','README.md','LICENSE','docs/worka-home.png','playtest/preview.config.mjs','playtest/entry.mjs','playtest/serve.mjs','tools/catalog-index.mjs','tools/story-index.mjs','tools/studio.mjs','tools/setup.mjs','tools/worka-client.mjs','connections/relations.json']};
 }

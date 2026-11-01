@@ -16,7 +16,7 @@ export type Data = z.infer<typeof dataSchema>;
 
 const configSchema = z.object({
   connections:z.record(z.string(),z.object({provider:z.string(),connectionId:z.string()})).optional(),
-  gameRoot:z.string().optional(),gameCommit:z.string().regex(/^[a-f0-9]{40}$/).optional(),adapter:z.string().optional(),
+  gameRoot:z.string().optional(),gameCommit:z.string().regex(/^[a-f0-9]{40}$/).optional(),adapter:z.string().optional(),coverAsset:z.string().optional(),
   previewDesk:z.object({home:z.string(),cli:z.string()}).optional(),
   feedbackInTodo: z.boolean().optional(), projectId: z.string().optional(),
   notes: z.object({ todo: z.string().optional(), execution: z.string().optional() }).optional(),

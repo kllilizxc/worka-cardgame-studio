@@ -35,6 +35,12 @@ function inside(root, path) {
   return part.split(sep).join('/');
 }
 
+function backgroundAsset(value, assets) {
+  if (typeof value !== 'string' || !/\.(png|jpe?g|webp|svg|avif)$/i.test(value)) return undefined;
+  const path = value.startsWith('public/') ? value : 'public/' + value.replace(/^\//, '');
+  return assets.get(path) || 'asset:' + path;
+}
+
 function sceneRefs(source,assets) {
   const ids = {speakerId:'people',npcId:'people',actorId:'people',relationId:'people',cardId:'cards',itemId:'shop',encounterId:'encounter',encounterResourceId:'encounter'};
   const refs = new Map();
@@ -96,7 +102,7 @@ export async function buildStory(gameRoot) {
     const group=relative('knowledge',dirname(path)).split(sep).filter(Boolean);
     const folders=scene?[graph?.book || meta.storyTitle || storyId || '未归卷剧情', ...(group.length?group:[]), meta.chapter||'未分章', ...(meta.act?[meta.act]:[])] : ['资料',...group];
     const title=meta.title || /^#\s+(.+)$/m.exec(text)?.[1] || path.split('/').pop();
-    const row={id,title,path,folders,body:text,search:plain(text),choices:[],refs:markdownRefs(text,meta,assets),...(scene?{storyId,nodeId:meta.nodeId}:{})};
+    const row={id,title,path,folders,body:text,search:plain(text),choices:[],refs:markdownRefs(text,meta,assets),backgroundAssetId:backgroundAsset(meta.backgroundAsset,assets),...(scene?{storyId,nodeId:meta.nodeId}:{})};
     rows.push(row);docs.set(file,row);ids.add(id);
     if(scene && storyId) authored.add(JSON.stringify([storyId,meta.nodeId]));
     if(scene) pending.set(row,choiceLinks(text,file));
@@ -111,12 +117,25 @@ export async function buildStory(gameRoot) {
       const choices=(graph.choices??[]).filter(c=>c.from===node.id);
       const words=[node.title,node.summary,node.detail,node.body,...(node.dialogues??[]).flatMap(d=>[d.speakerName,d.text]),...choices.map(c=>c.text)];
       rows.push({id:route(node.id),title:node.title||node.id,path,folders:[book,node.chapter||'正文',...(node.act?[node.act]:[])],
-        refs:sceneRefs([node,...choices],assets),body:JSON.stringify({nodes:[node],choices}),search:words.filter(Boolean).join(' '),choices:choices.map(c=>({label:c.text||c.id,to:route(c.to)})),
+        refs:sceneRefs([node,...choices],assets),backgroundAssetId:backgroundAsset(node.backgroundAsset,assets),body:JSON.stringify({nodes:[node],choices}),search:words.filter(Boolean).join(' '),choices:choices.map(c=>({label:c.text||c.id,to:route(c.to)})),
         storyId:resource.resourceId,nodeId:node.id});
     }
   }
-  const preferred=graphs.flatMap(({graph,resource})=>[graph.entryNodeId,resource.resourceId+'::'+graph.entryNodeId]);
-  const initialId=rows.find(row=>row.nodeId && row.path.endsWith('.md') && preferred.includes(row.id))?.id || rows.find(row=>row.nodeId)?.id || rows[0]?.id;
+  const launched=[];
+  for(const resource of catalog.resources.filter(r=>r.kind==='hub')) {
+    const file=await realpath(resolve(root,'public',resource.publicPath));
+    inside(root,file);
+    const hub=JSON.parse(await readFile(file,'utf8'));
+    const locations=Array.isArray(hub.locations)?hub.locations:[];
+    for(const location of [...locations.filter(l=>l.id===hub.defaultLocationId),...locations.filter(l=>l.id!==hub.defaultLocationId)])
+      for(const action of location.actions??[])if(action.kind==='startStory'&&typeof action.storyResourceId==='string')launched.push(action.storyResourceId);
+  }
+  const isMainline=({graph})=>{
+    const tags=graph.nodes.find(node=>node.id===graph.entryNodeId)?.tags??[];
+    return tags.includes('主线')&&!tags.some(tag=>['教学','教程','示例'].includes(tag));
+  };
+  const ordered=[...graphs.filter(g=>launched.includes(g.resource.resourceId)&&isMainline(g)),...graphs.filter(isMainline),...graphs];
+  const initialId=ordered.map(({graph,resource})=>rows.find(row=>row.storyId===resource.resourceId&&row.nodeId===graph.entryNodeId)?.id).find(Boolean) || rows.find(row=>row.nodeId)?.id || rows[0]?.id;
   return {initialState:{},initialConfig:{
     resources:[{title:'CardGame',path:join(root,'knowledge/index.md'),root,linkBase:root}],
     storyIndex:rows,initialScene:initialId??''

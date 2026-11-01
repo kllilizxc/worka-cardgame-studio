@@ -1025,7 +1025,9 @@ export declare const gameInstallation: import("@dsh-workbench/runtime").NoteOper
     adapter: z.ZodOptional<z.ZodString>;
     gameRoot: z.ZodOptional<z.ZodString>;
     gameCommit: z.ZodOptional<z.ZodString>;
+    coverAsset: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, "query">;
+export declare const gameCover: import("@dsh-workbench/runtime").NoteOperation<undefined, z.ZodNullable<z.ZodString>, "query">;
 export declare const playGame: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
     key: z.ZodOptional<z.ZodString>;
     commit: z.ZodOptional<z.ZodString>;

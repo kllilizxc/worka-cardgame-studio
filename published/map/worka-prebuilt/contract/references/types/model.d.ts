@@ -45,6 +45,12 @@ export declare const recordSchema: z.ZodObject<{
     thumbnail: z.ZodOptional<z.ZodString>;
     mediaUrl: z.ZodOptional<z.ZodString>;
     mediaKey: z.ZodOptional<z.ZodString>;
+    portraits: z.ZodOptional<z.ZodArray<z.ZodObject<{
+        id: z.ZodString;
+        mediaKey: z.ZodOptional<z.ZodString>;
+        thumbnail: z.ZodOptional<z.ZodString>;
+        mediaUrl: z.ZodOptional<z.ZodString>;
+    }, z.core.$strip>>>;
 }, z.core.$strip>;
 export declare const indexSchema: z.ZodObject<{
     connections: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
@@ -98,6 +104,12 @@ export declare const indexSchema: z.ZodObject<{
         thumbnail: z.ZodOptional<z.ZodString>;
         mediaUrl: z.ZodOptional<z.ZodString>;
         mediaKey: z.ZodOptional<z.ZodString>;
+        portraits: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            mediaKey: z.ZodOptional<z.ZodString>;
+            thumbnail: z.ZodOptional<z.ZodString>;
+            mediaUrl: z.ZodOptional<z.ZodString>;
+        }, z.core.$strip>>>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
 export type RecordRow = z.infer<typeof recordSchema>;
@@ -153,5 +165,11 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{}, z.ZodO
         thumbnail: z.ZodOptional<z.ZodString>;
         mediaUrl: z.ZodOptional<z.ZodString>;
         mediaKey: z.ZodOptional<z.ZodString>;
+        portraits: z.ZodOptional<z.ZodArray<z.ZodObject<{
+            id: z.ZodString;
+            mediaKey: z.ZodOptional<z.ZodString>;
+            thumbnail: z.ZodOptional<z.ZodString>;
+            mediaUrl: z.ZodOptional<z.ZodString>;
+        }, z.core.$strip>>>;
     }, z.core.$strip>>;
 }, z.core.$strip>>;

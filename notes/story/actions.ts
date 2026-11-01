@@ -12,6 +12,32 @@ async function readIndex(ctx:import('@dsh-workbench/runtime').NoteQueryContext<t
   return snap.data==null?config:{...referenceConfigSchema.parse(snap.data),connections:config.connections};
 }
 
+export const sceneAsset=note.query({visibility:'private',description:'读取场景明确指定的背景图。',input:z.object({sceneId:z.string()}),output:z.string().nullable()},async(ctx,{sceneId})=>{
+  const config=await readIndex(ctx),scene=config.storyIndex?.find(row=>row.id===sceneId);
+  if(!config.connections?.game||!scene)return null;
+  let id=scene.backgroundAssetId;
+  if(!id){
+    const doc=await ctx.resources.read<DocumentRead>({name:'extension.game-project.document',connection:'game',input:{path:scene.path,maxLines:500,pages:100}});
+    if(doc.error)throw Error(doc.error);
+    const text=doc.data?.content??'';
+    let background:string|undefined;
+    if(scene.path.endsWith('.json')){
+      try{background=JSON.parse(text).nodes?.find((node:{id:string})=>node.id===scene.nodeId)?.backgroundAsset;}catch{}
+    }else{
+      const header=/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1]??'';
+      background=/^backgroundAsset:\s*(.*?)\s*$/m.exec(header)?.[1]?.replace(/^(['"])([\s\S]*)\1$/,'$2');
+    }
+    if(typeof background==='string'&&/\.(png|jpe?g|webp|svg|avif)$/i.test(background)){
+      const path=background.startsWith('public/')?background:'public/'+background.replace(/^\//,'');
+      id=scene.refs?.find(ref=>ref.note==='media'&&(ref.id==='asset:'+path||ref.id.endsWith(':'+path)))?.id;
+    }
+  }
+  if(!id||!scene.refs?.some(ref=>ref.note==='media'&&ref.id===id))return null;
+  const asset=await ctx.resources.read<string|null>({name:'extension.game-project.asset',connection:'game',input:{id}});
+  if(asset.error)throw Error(asset.error);
+  return asset.data??null;
+});
+
 export const document = note.query({visibility:'public',description:'按已登记资料路径和行范围读取原文件内容。',input:readInputSchema.extend({pages:z.number().int().min(1).max(100).optional()}),output:documentReadSchema.loose()}, async (ctx, input) => {
     if((await ctx.config.read()).connections?.game){
       const snap=await ctx.resources.read({name:'extension.game-project.document',connection:'game',input});

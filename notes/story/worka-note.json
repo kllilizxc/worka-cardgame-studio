@@ -24,7 +24,6 @@
     "view-compact.tsx",
     "view-expanded.tsx",
     "view.tsx",
-    "campaign-art.json",
     "story-compact.css"
   ],
   "prerequisites": [

@@ -9,6 +9,7 @@ export const recordSchema=z.object({
   refs:z.array(z.object({note:kindSchema,id:z.string()})),
   diagram:z.array(z.object({id:z.string(),label:z.string(),layer:z.number(),kind:z.string(),to:strings})).optional(),
   thumbnail:z.string().optional(),mediaUrl:z.string().optional(),mediaKey:z.string().optional(),
+  portraits:z.array(z.object({id:z.string(),mediaKey:z.string().optional(),thumbnail:z.string().optional(),mediaUrl:z.string().optional()})).optional(),
 });
 export const indexSchema=z.object({connections:z.record(z.string(),z.object({provider:z.string(),connectionId:z.string()})).optional(),kind:kindSchema,revision:z.string(),records:z.array(recordSchema)});
 export type RecordRow=z.infer<typeof recordSchema>;

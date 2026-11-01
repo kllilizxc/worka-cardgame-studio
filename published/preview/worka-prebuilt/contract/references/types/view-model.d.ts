@@ -384,6 +384,7 @@ export declare function usePreviewModel(): {
         gameRoot?: string | undefined;
         gameCommit?: string | undefined;
         adapter?: string | undefined;
+        coverAsset?: string | undefined;
         previewDesk?: {
             home: string;
             cli: string;
@@ -399,10 +400,12 @@ export declare function usePreviewModel(): {
         adapter?: string | undefined;
         gameRoot?: string | undefined;
         gameCommit?: string | undefined;
+        coverAsset?: string | undefined;
     }, {
         adapter?: string | undefined;
         gameRoot?: string | undefined;
         gameCommit?: string | undefined;
+        coverAsset?: string | undefined;
     }>;
     refreshState: () => Promise<void>;
     mode: import("@dsh-workbench/react/internal").WidgetMode;
