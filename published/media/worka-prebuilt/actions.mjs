@@ -6072,6 +6072,25 @@ function superRefine(fn, params) {
   return _superRefine(fn, params);
 }
 
+function validateRecordRouting(value) {
+  if (value === undefined)
+    return [];
+  if (!Array.isArray(value) || value.length > 32)
+    throw Error("Invalid record routing declarations");
+  const pointer = (v) => typeof v === "string" && v.startsWith("/") && v.length <= 512;
+  return value.map((raw) => {
+    if (!raw || typeof raw !== "object")
+      throw Error("Invalid record routing declaration");
+    const d = raw;
+    if (Object.keys(d).some((key) => !["collection", "query", "input", "items", "next", "route", "id", "label", "aliases", "session", "links", "identities"].includes(key)) || !!d.collection === !!d.query || [d.collection, d.query].some((v) => v !== undefined && !/^[A-Za-z][A-Za-z\d_-]*$/.test(v)) || d.route !== undefined && (!d.route || typeof d.route.path !== "string" || !d.route.path.startsWith("/") || typeof d.route.param !== "string" || !d.route.path.split("/").includes(":" + d.route.param)) || !pointer(d.id) || [d.label, d.session, d.items, d.next].some((v) => v !== undefined && !pointer(v)) || d.query && !d.items || d.aliases !== undefined && (!Array.isArray(d.aliases) || d.aliases.length > 16 || d.aliases.some((value) => typeof value === "string" ? !pointer(value) : !value || !pointer(value.items) || !pointer(value.id))) || d.links !== undefined && (!Array.isArray(d.links) || d.links.length > 32 || d.links.some((link) => !link || !(link.noteId === "$self" || pointer(link.noteId)) || !pointer(link.recordId))) || d.identities !== undefined && (!Array.isArray(d.identities) || d.identities.length > 16 || d.identities.some((key) => !key || typeof key.namespace !== "string" || !key.namespace.trim() || !pointer(key.value))))
+      throw Error("Invalid record routing declaration");
+    if (d.input !== undefined && (!d.input || typeof d.input !== "object" || Array.isArray(d.input)))
+      throw Error("Invalid record routing query input");
+    return JSON.parse(JSON.stringify(d));
+  });
+}
+
+
 var pageInput = /* @__PURE__ */ (() => strictObject({ cursor: string2().min(1).max(32768).optional() }))();
 var identifier = /^[A-Za-z][A-Za-z\d_-]*$/;
 var idSchema = /* @__PURE__ */ (() => string2().min(1).max(512))();
@@ -6240,7 +6259,16 @@ function triggerContracts(value, note) {
 }
 
 
-var NOTE_ABI = 3;
+var NOTE_ABI = 4;
+
+
+class OperationRejectedError extends Error {
+  code = "operation-rejected";
+  constructor(message) {
+    super(message);
+    this.name = "OperationRejectedError";
+  }
+}
 
 
 var definitionKey = Symbol.for("worka.note-capability.v3");
@@ -6259,8 +6287,10 @@ function operation(kind, definition, handler) {
     assertJson(input);
     const value = await handler(context, input);
     if (definition.output === undefined) {
-      if (value !== undefined)
-        throw new Error("An operation without output must not return a business value");
+      if (value !== undefined) {
+        const message = "An operation without output must not return a business value";
+        throw kind === "mutation" ? new OperationRejectedError(message) : new Error(message);
+      }
       return null;
     }
     const result = await outputSchema.safeParseAsync(value);
@@ -6320,15 +6350,17 @@ function describe2(name, definition) {
 function describeCapabilities(module) {
   const model = noteDefinition(module.note);
   if (!model)
-    throw new Error("This note requires ABI 3: export note = defineNote(...) with native collections");
+    throw new Error("This note requires ABI 4: export note = defineNote(...) with native collections");
   const contract = { schemaVersion: NOTE_ABI, actions: [], queries: [], events: [], model: {} };
   const collections = collectionSchemas(model.collections);
   if (collections.length)
     contract.model.collections = Object.fromEntries(collections.map((item) => [item.name, item.contract]));
   if (model.config) {
     const configSchema = schema(model.config.schema, "input");
-    contract.model.config = { schema: configSchema, defaults: model.config.defaults, required: Array.isArray(configSchema.required) ? configSchema.required : [] };
+    contract.model.config = { schema: configSchema, defaults: model.config.defaults };
   }
+  if (model.records?.length)
+    contract.records = freezeJson(model.records);
   if (model.resources?.length)
     contract.resources = freezeJson(model.resources);
   const update = model.update ?? { dataVersion: "1" };
@@ -6358,20 +6390,14 @@ function describeCapabilities(module) {
     else
       contract.actions.push(describe2(name, definition));
   }
+  for (const source of contract.records ?? [])
+    if (source.query && !contract.queries.some((query) => query.name === source.query))
+      throw Error(`Unknown record routing query: ${source.query}`);
   if (module.triggers !== undefined)
     contract.triggers = triggerContracts(module.triggers, module.note);
   for (const key of ["actions", "queries", "events"])
     contract[key].sort((a, b) => a.name.localeCompare(b.name));
   return contract;
-}
-
-
-class OperationRejectedError extends Error {
-  code = "operation-rejected";
-  constructor(message) {
-    super(message);
-    this.name = "OperationRejectedError";
-  }
 }
 
 
@@ -6385,7 +6411,7 @@ function identity(raw) {
 }
 function data(raw) {
   if (!raw.data)
-    throw new Error("This host does not provide ABI 3 native data sessions");
+    throw new Error("This host does not provide ABI 4 native data sessions");
   return raw.data;
 }
 function writer(raw) {
@@ -6398,7 +6424,7 @@ function writer(raw) {
 function declarations(note) {
   const definition = noteDefinition(note);
   if (!definition)
-    throw new Error("Missing ABI 3 note model");
+    throw new Error("Missing ABI 4 note model");
   return definition.collections ?? {};
 }
 function collectionAccess(note, raw, writable) {
@@ -6587,8 +6613,8 @@ function bindActionContext(note, raw) {
   });
 }
 function defineNote(definition) {
-  if (!definition || typeof definition !== "object" || Object.keys(definition).some((key) => !["collections", "config", "resources", "update"].includes(key)))
-    throw new Error("ABI 3 notes use native collections; state/background and unknown model fields are unsupported");
+  if (!definition || typeof definition !== "object" || Object.keys(definition).some((key) => !["collections", "config", "resources", "update", "records"].includes(key)))
+    throw new Error("ABI 4 notes use native collections; state/background and unknown model fields are unsupported");
   if (definition.update && Object.keys(definition.update).some((key) => !["dataVersion", "checks"].includes(key)))
     throw new Error("Model update accepts only dataVersion and checks");
   const collections = collectionSchemas(definition.collections);
@@ -6596,8 +6622,13 @@ function defineNote(definition) {
     throw new Error("Config schema must be an object");
   if (definition.resources && definition.resources.length > 32)
     throw new Error("A note may declare at most 32 resource needs");
+  const records = validateRecordRouting(definition.records);
+  for (const source of records)
+    if (source.collection && !definition.collections?.[source.collection])
+      throw Error(`Unknown record routing collection: ${source.collection}`);
   const captured = Object.freeze({
     ...definition,
+    ...records.length ? { records: freezeJson(records) } : {},
     collections: Object.freeze(Object.fromEntries(collections.map((item) => [item.name, item.definition]))),
     ...definition.config ? { config: Object.freeze({ schema: definition.config.schema, defaults: freezeJson(definition.config.schema.partial().parse(definition.config.defaults)) }) } : {},
     ...definition.resources ? { resources: freezeJson(definition.resources) } : {}
@@ -6628,7 +6659,7 @@ function noteDefinition(value) {
 async function validateNoteModel(note, raw) {
   const definition = noteDefinition(note);
   if (!definition)
-    throw new Error("Missing ABI 3 note model");
+    throw new Error("Missing ABI 4 note model");
   if (definition.config)
     assertJson(definition.config.schema.partial().parse(await data(raw).getConfig()));
 }
@@ -6641,7 +6672,8 @@ async function checkNoteModel(note, name, raw) {
 
 var compiled = Symbol.for("worka.preview.project");
 
-var NOTE_FILE_MAX_BYTES = 4 * 1024 * 1024;
+var NOTE_FILE_MAX_BYTES = 20 * 1024 * 1024;
+var NOTE_FILE_MAX_WIRE_BYTES = Math.ceil(NOTE_FILE_MAX_BYTES / 3) * 4 + 1024 * 1024;
 
 var K = new Uint32Array([
   1116352408,

@@ -1,11 +1,9 @@
 import './folio.css';
 import {useUi} from '@dsh-workbench/react';
 import {ui} from './messages';
-import { Button } from '@heroui/react/button';
-import { CloseButton } from '@heroui/react/close-button';
-import { Modal } from '@heroui/react/modal';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import React, { useState } from "react";
-import "@heroui/styles/css";
 import type { TodoImage, TodoPriority, TodoStatus } from "./actions";
 
 export function normalizeStatus(item: { status?: string; completed?: boolean }): TodoStatus {
@@ -173,36 +171,32 @@ export function ImageAttachments({
               className="folio-image-preview"
               aria-label={ui("放大预览：{p0}", { p0: image.name || ui("图片 {p0}", { p0: index + 1 }) })}
               aria-haspopup="dialog"
-              onPress={() => setPreviewImage(image)}
+              onClick={() => setPreviewImage(image)}
             >
               <img src={image.dataUrl} alt="" loading="lazy" />
             </Button>
-            {onRemove && <CloseButton className="folio-image-remove" aria-label={ui("移除图片 {p0}", { p0: index + 1 })} onPress={() => onRemove(image.id)} />}
+            {onRemove && <Button className="folio-image-remove" variant="ghost" size="icon" aria-label={ui("移除图片 {p0}", { p0: index + 1 })} onClick={() => onRemove(image.id)}>×</Button>}
           </figure>
         ))}
       </div>
-      <Modal isOpen={Boolean(previewImage)} onOpenChange={(isOpen) => { if (!isOpen) setPreviewImage(null); }}>
-        <Modal.Backdrop className="folio-image-modal-backdrop" variant="blur" onClick={(event) => event.stopPropagation()}>
-          <Modal.Container className="folio-image-modal-container" placement="center" size="md">
-            <Modal.Dialog
-              aria-label={ui("图片预览")}
-              className="folio-image-modal-dialog"
-              style={{ width: "fit-content", maxWidth: "min(94vw, 1200px)", maxHeight: "94dvh", padding: "34px 10px 10px" }}
-            >
-              <Modal.CloseTrigger className="folio-image-modal-close" aria-label={ui("关闭图片预览")} />
-              <Modal.Body className="folio-image-modal-body" style={{ display: "grid", placeItems: "center", padding: 0, maxWidth: "calc(94vw - 20px)", maxHeight: "calc(94dvh - 44px)" }}>
-                {previewImage && (
-                  <img
-                    src={previewImage.dataUrl}
-                    alt={previewImage.name || ui("图片预览")}
-                    style={{ display: "block", width: "auto", height: "auto", maxWidth: "calc(94vw - 40px)", maxHeight: "calc(88dvh - 48px)", objectFit: "contain", borderRadius: 4 }}
-                  />
-                )}
-              </Modal.Body>
-            </Modal.Dialog>
-          </Modal.Container>
-        </Modal.Backdrop>
-      </Modal>
+      <Dialog open={Boolean(previewImage)} onOpenChange={(isOpen) => { if (!isOpen) setPreviewImage(null); }}>
+        <DialogContent
+          aria-label={ui("图片预览")}
+          className="folio-image-modal-dialog"
+          style={{ width: "fit-content", maxWidth: "min(94vw, 1200px)", maxHeight: "94dvh", padding: "34px 10px 10px" }}
+        >
+          <DialogTitle className="sr-only">{ui("图片预览")}</DialogTitle>
+          <div className="folio-image-modal-body" style={{ display: "grid", placeItems: "center", padding: 0, maxWidth: "calc(94vw - 20px)", maxHeight: "calc(94dvh - 44px)" }}>
+            {previewImage && (
+              <img
+                src={previewImage.dataUrl}
+                alt={previewImage.name || ui("图片预览")}
+                style={{ display: "block", width: "auto", height: "auto", maxWidth: "calc(94vw - 40px)", maxHeight: "calc(88dvh - 48px)", objectFit: "contain", borderRadius: 4 }}
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

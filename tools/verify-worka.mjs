@@ -38,7 +38,7 @@ try{
     releaseInstalledPlugins:(root,owner,hooks)=>plugins.release(root,owner,hooks),
     retainProviderClaims:(root,owner,activation,hooks)=>plugins.retainProviderClaims(root,owner,activation,hooks),
     installedPlugins:(root,owner)=>plugins.installed(root,owner),
-    onUserPrompt(){},async metadata(){return {cwd:root,hasMessages:false};},async ensureWorkspace(){},enableWorkbenchContext(){},async restoreSession(){},async archiveSession(){},async rename(){},async ensureContext(){},interactions:()=>[],isRunning:()=>false,hasRunningAgents:()=>false,logger:{error(){},warn(){}},
+    onUserPrompt(){},defaultModel:()=>({provider:'fixture',model:'fixture'}),modelCatalog:async()=>({default:{provider:'fixture',model:'fixture'},groups:[]}),async metadata(){return {cwd:root,hasMessages:false};},async ensureWorkspace(){},enableWorkbenchContext(){},async restoreSession(){},async archiveSession(){},async rename(){},async ensureContext(){},interactions:()=>[],isRunning:()=>false,hasRunningAgents:()=>false,logger:{error(){},warn(){}},
     async spawn(spec){
       assert.equal(spec.argv[0],nodes);assert.ok(spec.argv.includes(worker));spawns++;
       const child=spawn(spec.argv[0],spec.argv.slice(1),{cwd:spec.cwd,env:{...process.env,...spec.env},stdio:'pipe'});
@@ -92,7 +92,7 @@ try{
     const row=notes.find(n=>n.value.name===def.name);assert.ok(row,def.name);byKey.set(def.key,row.key);
     assert.ok(row.value.activeDirectory,def.key+' not activated');
     const artifact=await readPublishedArtifact(row.value.codePath);
-    assert.equal(artifact.capabilityAbi,3);assert.ok(row.value.viewEntry);
+    assert.equal(artifact.capabilityAbi,4);assert.ok(row.value.viewEntry);
     const desc=await app.contracts.describe(row.key);
     assert.equal(desc.status,'ready',def.key+' '+JSON.stringify(desc.diagnostics));
     if(Array.isArray(def.initialConfig?.records)){

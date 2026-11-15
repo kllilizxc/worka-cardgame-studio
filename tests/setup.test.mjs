@@ -126,21 +126,34 @@ test('the published aliases bind different checkouts when the same desktop is im
 test('partial link activation restores the prior source and retry commits once',async()=>{
  const root=await mkdtemp(join(tmpdir(),'game-project-rollback-'));
  try{
-  const f=await fixture(root),dispatch=f.host.app.dispatch;
-  let fail=true;
+  const f=await fixture(root),dispatch=f.host.app.dispatch,writeRecord=f.host.app.core.writeRecord;
+  let storedLinks,revision=1,failUpdate=true,failState=false;
   f.host.app.dispatch=async(method,input,...args)=>{
-    if(method==='connection.update'&&fail){fail=false;throw Error('activation interrupted');}
+    if(method==='connection.get')return {enabled:true,revision:String(revision),...(storedLinks===undefined?{}:{links:storedLinks})};
+    if(method==='connection.update'){
+      if(failUpdate){failUpdate=false;throw Error('activation interrupted');}
+      storedLinks=input.change.links;revision++;
+      return dispatch(method,input,...args);
+    }
     return dispatch(method,input,...args);
   };
+  f.host.app.core.writeRecord=async(table,k,v)=>{
+    if(failState&&table==='states'&&k.startsWith('cardgame.project/')){failState=false;throw Error('state write interrupted');}
+    return writeRecord(table,k,v);
+  };
   const p=gameProject(f.host),file=join(f.desks.one.directory,'connections/references/connection.ts');
+  const custom="import {defineConnection} from '@dsh-workbench/runtime/connection';\nexport default defineConnection({roles:{},on:{}});\n";
+  await writeFile(file,custom);
   await assert.rejects(p.invoke('bind',{source:f.game},asDesktop),/activation interrupted/);
-  assert.equal(await readFile(file,'utf8'),'');
+  assert.equal(storedLinks,undefined);
   assert.equal((await status(p,'one-story')).configured,false);
+  storedLinks=[{source:{noteId:'one-story',recordId:'prior'},target:{noteId:'one-preview',recordId:'play:prior'},label:'旧引用'}];
+  failState=true;
+  await assert.rejects(p.invoke('bind',{source:f.game},asDesktop),/state write interrupted/);
+  assert.deepEqual(storedLinks,[{source:{noteId:'one-story',recordId:'prior'},target:{noteId:'one-preview',recordId:'play:prior'},label:'旧引用'}]);
   await p.invoke('bind',{source:f.game},asDesktop);
   assert.equal((await status(p,'one-story')).ready,true);
-  const custom='export default {on:{},roles:{},links:[]};';
-  await writeFile(file,custom);
-  await assert.rejects(p.invoke('refresh',{},asDesktop),/已修改/);
+  assert.deepEqual(storedLinks,[]);
   assert.equal(await readFile(file,'utf8'),custom);
  }finally{await rm(root,{recursive:true,force:true});}
 });

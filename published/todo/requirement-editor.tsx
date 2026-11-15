@@ -1,5 +1,5 @@
 import { QueryState, useNote, useMutation, useUi } from '@dsh-workbench/react';
-import { Button } from '@heroui/react/button';
+import { Button } from '@/components/ui/button';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TodoListItem } from './list';
 import { mergePastedImages, pasteClipboardImages } from './view-shared';
@@ -50,8 +50,8 @@ export function RequirementEditor({ item, onClose }: {
     {changed && <span role="status">{ui('来源已更新；你的草稿已保留，保存时会核对冲突。')}</span>}
     <footer className="folio-editor-footer">
       <div className="folio-editor-actions">
-        <Button variant="tertiary" type="button" isDisabled={draft.saving || uploadPending} onPress={() => { draft.reset(); onClose(item.id); }}>{ui.rich('取消')}</Button>
-        <Button variant="primary" type="submit" isDisabled={draft.saving || uploadPending || !source.ready || removed || !draft.value.title.trim()}>{draft.saving ? ui('提交中…') : ui.rich('保存修改')}</Button>
+        <Button variant="ghost" type="button" disabled={draft.saving || uploadPending} onClick={() => { draft.reset(); onClose(item.id); }}>{ui.rich('取消')}</Button>
+        <Button type="submit" disabled={draft.saving || uploadPending || !source.ready || removed || !draft.value.title.trim()}>{draft.saving ? ui('提交中…') : ui.rich('保存修改')}</Button>
       </div>
     </footer>
   </form>;

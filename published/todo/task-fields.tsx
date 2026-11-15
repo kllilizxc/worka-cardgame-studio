@@ -1,10 +1,8 @@
 import React, { useEffect, useRef } from 'react';
-import { Input } from '@heroui/react/input';
-import { TextField } from '@heroui/react/textfield';
-import { Label } from '@heroui/react/label';
-import { ListBox } from '@heroui/react/list-box';
-import { Select } from '@heroui/react/select';
-import { TextArea } from '@heroui/react/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import type { TodoImage, TodoPriority } from './actions';
 import type { TodoAttachment } from './attachment-schema';
 import { FileAttachments } from './file-attachments';
@@ -21,25 +19,29 @@ export function TaskFields({ value, onChange, disabled, uploadKey, onBusyChange,
   const titleInput = useRef<HTMLInputElement>(null);
   useEffect(() => { if (!disabled) queueMicrotask(() => titleInput.current?.focus()); }, [disabled]);
   return <>
-    <TextField className="folio-editor-field folio-editor-title" fullWidth isDisabled={disabled} value={value.title} onChange={title => onChange({ title })}>
-      <Label>{ui('待办标题')}</Label><Input ref={titleInput} autoFocus onPaste={onPaste} />
-    </TextField>
-    <TextField className="folio-editor-field folio-editor-description" fullWidth isDisabled={disabled} value={value.description ?? ''} onChange={description => onChange({ description })}>
-      <Label>{ui('待办详情')}</Label><TextArea rows={5} onPaste={onPaste} />
-    </TextField>
+    <label className="folio-editor-field folio-editor-title">
+      <span>{ui('待办标题')}</span><Input disabled={disabled} value={value.title} onChange={event => onChange({ title: event.target.value })} ref={titleInput} autoFocus onPaste={onPaste} />
+    </label>
+    <label className="folio-editor-field folio-editor-description">
+      <span>{ui('待办详情')}</span><Textarea disabled={disabled} value={value.description ?? ''} onChange={event => onChange({ description: event.target.value })} rows={5} onPaste={onPaste} />
+    </label>
     <div className="folio-schedule-fields">
-      <TextField className="folio-editor-field" isDisabled={disabled} value={value.category ?? ''} onChange={category => onChange({ category })}>
-        <Label>{ui('分类')}</Label><Input />
-      </TextField>
-      <Select className="folio-editor-field folio-editor-priority" isDisabled={disabled} value={value.priority ?? 'medium'} onChange={priority => { if (typeof priority === 'string') onChange({ priority: priority as TodoPriority }); }}>
-        <Label>{ui('优先级')}</Label><Select.Trigger><Select.Value /><Select.Indicator /></Select.Trigger><Select.Popover><ListBox>{Object.entries(PRIORITY_CONFIG).map(([key, priority]) => <ListBox.Item key={key} id={key} textValue={priority.label}>{priority.label}</ListBox.Item>)}</ListBox></Select.Popover>
-      </Select>
-      <TextField className="folio-editor-field" isDisabled={disabled} value={value.startDate ?? ''} onChange={startDate => onChange({ startDate })}>
-        <Label>{ui('开始日期')}</Label><Input type="date" />
-      </TextField>
-      <TextField className="folio-editor-field" isDisabled={disabled} value={value.dueDate ?? ''} onChange={dueDate => onChange({ dueDate })}>
-        <Label>{ui('截止日期')}</Label><Input type={value.dueDate?.includes('T') ? 'datetime-local' : 'date'} />
-      </TextField>
+      <label className="folio-editor-field">
+        <span>{ui('分类')}</span><Input disabled={disabled} value={value.category ?? ''} onChange={event => onChange({ category: event.target.value })} />
+      </label>
+      <div className="folio-editor-field folio-editor-priority">
+        <Label>{ui('优先级')}</Label>
+        <Select disabled={disabled} value={value.priority ?? 'medium'} onValueChange={priority => onChange({ priority: priority as TodoPriority })}>
+          <SelectTrigger aria-label={ui('优先级')}><SelectValue /></SelectTrigger>
+          <SelectContent>{Object.entries(PRIORITY_CONFIG).map(([key, priority]) => <SelectItem key={key} value={key}>{priority.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <label className="folio-editor-field">
+        <span>{ui('开始日期')}</span><Input disabled={disabled} value={value.startDate ?? ''} onChange={event => onChange({ startDate: event.target.value })} type="date" />
+      </label>
+      <label className="folio-editor-field">
+        <span>{ui('截止日期')}</span><Input disabled={disabled} value={value.dueDate ?? ''} onChange={event => onChange({ dueDate: event.target.value })} type={value.dueDate?.includes('T') ? 'datetime-local' : 'date'} />
+      </label>
     </div>
     <div className="folio-editor-attachments">
       <ImageAttachments images={value.images} onRemove={id => onChange({ images: value.images.filter(image => image.id !== id) })} />

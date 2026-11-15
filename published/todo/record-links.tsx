@@ -1,4 +1,4 @@
-import { Button } from '@heroui/react/button';
+import { Button } from '@/components/ui/button';
 import { NoteIcon, QueryState, composeQueries, useLinks, useMutation, useNote } from '@dsh-workbench/react';
 import type { ComponentProps } from 'react';
 import type { TodoDisplaySource } from './list';
@@ -21,7 +21,7 @@ export function LinkGroup({ label, icon, links, onNavigate }: LinkGroupProps) {
   if (!links.length) return null;
   return <span className="folio-link-group" title={links.length === 1 ? links[0]!.label || undefined : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0, maxWidth: '100%' }}>
     {icon !== null && <NoteIcon icon={icon} size={16} />}
-    {links.length === 1 ? <Button size="sm" variant="tertiary" isDisabled={navigation.pending} aria-label={links[0]!.label && links[0]!.label !== label ? `${label}：${links[0]!.label}` : label} onPress={() => open(links[0]!)}>{label} ↗</Button> : <select aria-label={label} value="" disabled={navigation.pending} onChange={event => {
+    {links.length === 1 ? <Button size="sm" variant="ghost" disabled={navigation.pending} aria-label={links[0]!.label && links[0]!.label !== label ? `${label}：${links[0]!.label}` : label} onClick={() => open(links[0]!)}>{label} ↗</Button> : <select aria-label={label} value="" disabled={navigation.pending} onChange={event => {
       const link = links.find(link => link.key === event.currentTarget.value);
       event.currentTarget.value = '';
       if (link) open(link);

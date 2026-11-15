@@ -414,6 +414,9 @@ export declare function usePreviewModel(): {
     workbench: {
         openLinkedNote: (key: string, direction: "source" | "target") => Promise<void>;
         openSetup: () => Promise<void>;
+        requestFromNote: (query: string, input: import("@dsh-workbench/runtime").JsonValue, requestId: string) => Promise<{
+            sessionId: string;
+        }>;
         setCompactSurface: (surface: "card" | "transparent") => Promise<void>;
         openSession: (sessionId: string) => Promise<void>;
         openNote: (noteId: string, itemId?: string) => Promise<void>;

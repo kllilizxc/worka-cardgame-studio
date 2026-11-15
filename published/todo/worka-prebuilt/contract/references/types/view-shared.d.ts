@@ -1,6 +1,5 @@
 import './folio.css';
 import React from "react";
-import "@heroui/styles/css";
 import type { TodoImage, TodoPriority, TodoStatus } from "./actions";
 export declare function normalizeStatus(item: {
     status?: string;

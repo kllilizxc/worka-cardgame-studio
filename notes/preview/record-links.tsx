@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import { Button } from '@heroui/react/button';
+import { Button } from '@/components/ui/button';
 import {QueryState,useLinks,useMutation,useNote} from '@dsh-workbench/react';
 
 /** Presentation only: the host owns the query and all association data. */
@@ -25,8 +25,8 @@ function VisibleRelatedRecords({recordId,className}:RelatedRecordsProps) {
   if(query.data && !query.links.length && !query.loading && !query.error)return null;
   return <div className={className} aria-label="关联记录" style={{display:'flex',flexWrap:'wrap',gap:8,alignItems:'center'}}>
     <QueryState query={query}>{() => query.links.map(link =>
-      <Button key={link.id} size="sm" variant="tertiary" isDisabled={navigation.pending}
-        onPress={() => void navigation.run(() => note.navigation.open({noteId:link.target.noteId,recordId:link.target.recordId}))}>
+      <Button key={link.id} size="sm" variant="ghost" disabled={navigation.pending}
+        onClick={() => void navigation.run(() => note.navigation.open({noteId:link.target.noteId,recordId:link.target.recordId}))}>
         {link.label} ↗
       </Button>)}</QueryState>
     {navigation.error && <p role="alert">无法打开关联记录：{navigation.error.message}</p>}

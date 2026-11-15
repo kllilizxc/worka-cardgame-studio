@@ -1,5 +1,5 @@
 import {candidateSchema,feedbackSchema,receiveInputSchema,renameInputSchema} from './schemas';
-import {z,isNoteController,sha256} from '@dsh-workbench/runtime';
+import {z,sha256} from '@dsh-workbench/runtime';
 import { note, type SurfaceFailure } from './model';
 import {candidateDocument} from './document';
 export { note } from './model';
@@ -62,7 +62,6 @@ export const refreshFeedback = note.action({"description":"重试投递候选的
 
 /** A relation records the verified Desk handling state for one exact failed pass. */
 export const recordFeedback = note.mutation({visibility:'public',"description":"核对候选失败轮次后保存原任务的修复处理状态。","receipt":"queryable",input:z.object({key:z.string(),surface:z.string(),runId:z.string(),reportId:z.string(),handling:z.string(),summary:z.string().optional(),delegationId:z.string().optional(),sessionId:z.string().optional()}),output:z.looseObject({stored:z.boolean(),key:z.string(),runId:z.string(),duplicate:z.boolean().optional()})}, async (ctx, input) => {
-  if(!isNoteController(ctx.caller,ctx.note.id)&&!ctx.caller.skillCause?.chain.length)throw Error('需要所属便笺或已登记联动的操作授权');
   if(!input?.key?.trim()||!input.runId?.trim()||!input.reportId?.trim())throw Error('需要候选和失败轮次');
   const handling:{[key:string]:string}={coordinating:'coordinating',unreceived:'agent-unknown',superseded:'coordinating',queued:'agent',running:'agent',paused:'waiting-user','needs-input':'waiting-user',completed:'agent-done'};
   const nextHandling=handling[input.handling];

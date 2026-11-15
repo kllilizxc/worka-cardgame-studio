@@ -38,7 +38,10 @@ try {
     const source = join(repo,'notes',key), active = join(stage,'src-'+key), target = join(stage,'published-'+key);
     const def = await readNotePublication(source);
     await copyPublication(source,active,def);
-    await builder.build({noteId:key,version:await officialSourceHash(active),directory:active,outputDirectory:join(active,'output')});
+    const version = await officialSourceHash(active);
+    await symlink(join(host,'node_modules'),join(active,'node_modules'),'dir');
+    try { await builder.build({noteId:key,version,directory:active,outputDirectory:join(active,'output')}); }
+    finally { await rm(join(active,'node_modules'),{force:true}); }
     // Bun's action bundle labels modules with relative checkout paths. Runtime code
     // does not use those comments; leave machine-specific directories out of releases.
     const actionsPath=join(active,'output/actions.mjs');

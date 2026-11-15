@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, Outlet, useLocation, useMatch, useNavigate, useOutletContext, useParams } from 'react-router';
 import { noteHref } from '@dsh-workbench/runtime';
-import { Button } from '@heroui/react/button';
+import { Button } from '@/components/ui/button';
 import { NoteDialog, QueryState, useMutation, useNote } from '@dsh-workbench/react';
 import type { TodoListItem, TodoDisplaySource } from './list';
-import { COLUMNS, ImageAttachments, PRIORITY_CONFIG, SvgTrash } from './view-shared';
+import { COLUMNS, ImageAttachments, PRIORITY_CONFIG } from './view-shared';
 import { RequirementEditor } from './requirement-editor';
 import { FileAttachments } from './file-attachments';
 import { TodoProgressTimeline } from './progress-timeline';
@@ -19,7 +19,7 @@ export type TodoCardItem = TodoListItem & { primarySessionId?: string; sessionCo
 function RequirementDescription({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
   const long = text.length > 140 || text.split(/\r?\n/).length > 4;
-  return <div className="folio-detail-description"><p className={`folio-detail-copy ${long && !expanded ? 'folio-detail-description-preview' : ''}`}>{text}</p>{long && <Button className="folio-description-toggle" variant="tertiary" aria-expanded={expanded} onPress={() => setExpanded(value => !value)}>{expanded ? ui('收起要求') : ui('展开完整要求')}</Button>}</div>;
+  return <div className="folio-detail-description"><p className={`folio-detail-copy ${long && !expanded ? 'folio-detail-description-preview' : ''}`}>{text}</p>{long && <Button className="folio-description-toggle" variant="ghost" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{expanded ? ui('收起要求') : ui('展开完整要求')}</Button>}</div>;
 }
 
 type TaskContext = { item: TodoCardItem; onNavigate(open: () => Promise<unknown>): void };
@@ -44,8 +44,6 @@ function TaskDialog({ taskId }: { taskId: string }) {
   const editing = Boolean(useMatch('/notes/:noteId/tasks/:taskId/edit'));
   useEffect(() => { if (!editing) queueMicrotask(() => focusTarget.current?.focus({ preventScroll: true })); }, [taskId, location.key, editing]);
   const closePage = () => navigate({ pathname: noteHref(metadata.id), search: location.search });
-  const detailPath = noteHref(metadata.id, `/tasks/${encodeURIComponent(taskId)}`);
-  const openPage = (child: string) => navigate({ pathname: detailPath + child, search: location.search });
   const onNavigate = (open: () => Promise<unknown>) => { void action.run(open); };
   const delegating = delegation.status === 'pending';
   const busy = action.pending || remove.status === 'pending' || archive.status === 'pending' || delegating;
@@ -57,8 +55,8 @@ function TaskDialog({ taskId }: { taskId: string }) {
   return <NoteDialog open routeOwned label={ui('待办详情')} className="folio-detail ui-palette" onOpenChange={open => { if (!open) closePage(); }}>
     <span className="folio-detail-tape" aria-hidden="true" />
     <header ref={focusTarget} tabIndex={-1} className="folio-detail-heading"><div>{editing && <span className="folio-edit-mode">{ui('编辑待办')}</span>}{item && <span className={`folio-item-state ${item.status}`}>{status?.title}</span>}{item?.archived && <span className="folio-detail-muted">{ui('已归档')}</span>}</div><div className="folio-detail-toolbar" role="toolbar" aria-label={ui('待办详情')}>
-      {!editing && tools.map(tool => <span title={tool.label} key={tool.kind}><Button isIconOnly variant="tertiary" aria-label={tool.label} isDisabled={busy} onPress={tool.run}>{<DetailIcon kind={tool.kind} />}</Button></span>)}
-      <span title={ui('关闭详情')}><Button isIconOnly variant="tertiary" aria-label={ui('关闭详情')} onClick={event => event.currentTarget.closest('dialog')?.requestClose()}><DetailIcon kind="close" /></Button></span>
+      {!editing && tools.map(tool => <span title={tool.label} key={tool.kind}><Button variant="ghost" aria-label={tool.label} disabled={busy} onClick={tool.run}>{<DetailIcon kind={tool.kind} />}</Button></span>)}
+      <span title={ui('关闭详情')}><Button variant="ghost" aria-label={ui('关闭详情')} onClick={event => event.currentTarget.closest('dialog')?.requestClose()}><DetailIcon kind="close" /></Button></span>
     </div></header>
     <div className="folio-detail-body">
       <QueryState query={itemQuery}>{data => data.item

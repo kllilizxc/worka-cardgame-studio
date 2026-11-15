@@ -1,5 +1,5 @@
 import {useState} from 'react';
-import { Button } from '@heroui/react/button';
+import { Button } from '@/components/ui/button';
 import {useNote,useUi,QueryState} from '@dsh-workbench/react';
 import type {CandidateSpec} from './model';
 import type {FeedbackSummary} from './view-model';
@@ -16,7 +16,7 @@ function FeedbackDetail({id}:{id:string}) {
 }
 export function FeedbackReport({item}:{item:FeedbackSummary}) {
   const [open,setOpen]=useState(false);
-  return <section><Button variant="tertiary" size="sm" className="preview-quiet-button" aria-expanded={open} onPress={()=>setOpen(value=>!value)}>{item.subject||item.id}</Button>{open&&<FeedbackDetail id={item.id}/>}</section>;
+  return <section><Button variant="ghost" size="sm" className="preview-quiet-button" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{item.subject||item.id}</Button>{open&&<FeedbackDetail id={item.id}/>}</section>;
 }
 /** Mounted only when the user opens a report; list queries never transfer logs. */
 export function CandidateReport({candidate,surface}:{candidate:CandidateSpec;surface?:string}) {

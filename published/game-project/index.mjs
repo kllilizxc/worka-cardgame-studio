@@ -1,4 +1,4 @@
-// provider/index.mjs
+// .tmp/worka-cardgame-studio/provider/index.mjs
 import { createHash as createHash2 } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -6,12 +6,12 @@ import { createRequire } from "node:module";
 import { access, lstat, mkdir, mkdtemp, readFile as readFile3, readdir as readdir2, realpath as realpath2, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname as dirname2, extname as extname2, isAbsolute, join as join4, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
 
-// tools/studio.mjs
+// .tmp/worka-cardgame-studio/tools/studio.mjs
 import { readFile as readFile2 } from "node:fs/promises";
 import { join as join3 } from "node:path";
 import { execFileSync as execFileSync2 } from "node:child_process";
 
-// tools/story-index.mjs
+// .tmp/worka-cardgame-studio/tools/story-index.mjs
 import { readFile, readdir, realpath } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
 async function listMarkdown(root, dir = "knowledge") {
@@ -188,7 +188,7 @@ function boundStoryConfig(config) {
   return { ...config, storyIndex: config.storyIndex.map((row) => ({ ...row, body: "" })) };
 }
 
-// tools/catalog-index.mjs
+// .tmp/worka-cardgame-studio/tools/catalog-index.mjs
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join as join2, basename, extname } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -479,10 +479,9 @@ function catalogLinks(catalog) {
   return [...result.values()];
 }
 
-// tools/studio.mjs
+// .tmp/worka-cardgame-studio/tools/studio.mjs
 var catalogKeys = ["map", "encounter", "cards", "monsters", "people", "shop", "media"];
 var referenceNotes = ["story", ...catalogKeys, "preview"];
-var alias = (note) => "STUDIO_NOTE_" + note.toUpperCase() + "_ID";
 var json = async (file) => JSON.parse(await readFile2(file, "utf8"));
 async function projectData(root) {
   const commit = execFileSync2("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], { encoding: "utf8" }).trim();
@@ -522,17 +521,8 @@ async function projectData(root) {
   }
   return { commit, catalog, story, links };
 }
-function referenceCode(links) {
-  const declarations = links.map(({ source, target, label }) => ({ source: { ...source, noteId: alias(source.noteId) }, target: { ...target, noteId: alias(target.noteId) }, label }));
-  return `import {defineConnection} from '@dsh-workbench/runtime/connection';
-export default defineConnection({roles:{},on:{},links:[
-` + declarations.map((link) => "  " + JSON.stringify(link)).join(`,
-`) + `
-]});
-`;
-}
 
-// provider/index.mjs
+// .tmp/worka-cardgame-studio/provider/index.mjs
 var name = "game-project";
 var inject = ["worka"];
 var digest = (value) => createHash2("sha256").update(value).digest("hex");
@@ -625,51 +615,26 @@ async function desktopForCommand(app, caller, requested) {
 async function binding(app, id) {
   return (await app.core.readRecord("states", recordKey(id)))?.value;
 }
-async function replaceSource(file, code) {
-  const tmp = await mkdtemp(join4(dirname2(file), ".references-"));
-  try {
-    await writeFile(join4(tmp, "connection.ts"), code);
-    await rename(join4(tmp, "connection.ts"), file);
-  } finally {
-    await rm(tmp, { recursive: true, force: true });
-  }
-}
 async function links(app, caller, project, items, signal) {
-  const id = project.relationIds?.references, path = project.relationPaths?.references;
-  if (!id || !path)
+  const id = project.relationIds?.references;
+  if (!id)
     return;
-  const root = await realpath2(project.directory), parent = await inside2(root, path);
-  const file = join4(parent, "connection.ts");
-  if (!(await lstat(file)).isFile())
-    throw Error("引用文件必须是当前桌面作者目录中的普通文件");
-  const code = referenceCode(items.filter((l) => project.noteIds[l.source.noteId] && project.noteIds[l.target.noteId]));
-  const prior = await readFile3(file, "utf8");
-  if (prior && !prior.startsWith(referenceCode([]).split("links:[")[0] + "links:["))
-    throw Error("内容引用脚本已修改，请先单独保存再重建游戏索引");
+  const desired = items.filter((l) => project.noteIds[l.source.noteId] && project.noteIds[l.target.noteId] && (project.noteIds[l.source.noteId] !== project.noteIds[l.target.noteId] || l.source.recordId !== l.target.recordId)).map(({ source, target, label }) => ({
+    source: { noteId: project.noteIds[source.noteId], recordId: source.recordId },
+    target: { noteId: project.noteIds[target.noteId], recordId: target.recordId },
+    ...label ? { label } : {}
+  }));
   const rel = await app.dispatch("connection.get", { id }, caller, signal);
-  const activate = async (signal) => {
-    const latest = await app.dispatch("connection.get", { id }, caller, signal);
-    if (latest.enabled !== false)
-      await app.dispatch("connection.update", { id, revision: latest.revision, change: { enabled: true } }, caller, signal);
-  };
-  const changed = prior !== code;
-  if (changed)
-    await replaceSource(file, code);
-  const undo = async () => {
-    if (!changed || await readFile3(file, "utf8") !== code)
+  const prior = rel.links;
+  if (prior !== undefined && JSON.stringify(prior) === JSON.stringify(desired))
+    return async () => {};
+  await app.dispatch("connection.update", { id, revision: String(rel.revision), change: { links: desired } }, caller, signal);
+  return async () => {
+    const latest = await app.dispatch("connection.get", { id }, caller);
+    if (JSON.stringify(latest.links ?? []) !== JSON.stringify(desired))
       return;
-    await replaceSource(file, prior);
-    if (rel.enabled !== false)
-      await activate();
+    await app.dispatch("connection.update", { id, revision: String(latest.revision), change: { links: prior ?? [] } }, caller);
   };
-  try {
-    if (rel.enabled !== false)
-      await activate(signal);
-  } catch (error) {
-    await undo();
-    throw error;
-  }
-  return undo;
 }
 function projectFiles(data, root, adapter) {
   return {

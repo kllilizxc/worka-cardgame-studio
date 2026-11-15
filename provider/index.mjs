@@ -76,35 +76,22 @@ async function desktopForCommand(app,caller,requested){
   return s.desktopId;
 }
 async function binding(app,id){return (await app.core.readRecord('states',recordKey(id)))?.value;}
-async function replaceSource(file,code){
-  const tmp=await mkdtemp(join(dirname(file),'.references-'));
-  try{await writeFile(join(tmp,'connection.ts'),code);await rename(join(tmp,'connection.ts'),file);}
-  finally{await rm(tmp,{recursive:true,force:true});}
-}
 async function links(app,caller,project,items,signal){
-  const id=project.relationIds?.references, path=project.relationPaths?.references;
-  if(!id||!path)return; // A partial desktop can omit the optional links relation.
-  const root=await realpath(project.directory), parent=await inside(root,path);
-  const file=join(parent,'connection.ts');
-  if(!(await lstat(file)).isFile())throw Error('引用文件必须是当前桌面作者目录中的普通文件');
-  const code=referenceCode(items.filter(l=>project.noteIds[l.source.noteId]&&project.noteIds[l.target.noteId]));
-  const prior=await readFile(file,'utf8');
-  if(prior && !prior.startsWith(referenceCode([]).split('links:[')[0]+'links:['))throw Error('内容引用脚本已修改，请先单独保存再重建游戏索引');
+  const id=project.relationIds?.references;
+  if(!id)return; // A partial desktop can omit the optional links relation.
+  const desired=items.filter(l=>project.noteIds[l.source.noteId]&&project.noteIds[l.target.noteId]
+    &&(project.noteIds[l.source.noteId]!==project.noteIds[l.target.noteId]||l.source.recordId!==l.target.recordId))
+    .map(({source,target,label})=>({source:{noteId:project.noteIds[source.noteId],recordId:source.recordId},
+      target:{noteId:project.noteIds[target.noteId],recordId:target.recordId},...(label?{label}:{})}));
   const rel=await app.dispatch('connection.get',{id},caller,signal);
-  const activate=async signal=>{
-    const latest=await app.dispatch('connection.get',{id},caller,signal);
-    if(latest.enabled!==false)await app.dispatch('connection.update',{id,revision:latest.revision,change:{enabled:true}},caller,signal);
+  const prior=rel.links;
+  if(prior!==undefined&&JSON.stringify(prior)===JSON.stringify(desired))return async()=>{};
+  await app.dispatch('connection.update',{id,revision:String(rel.revision),change:{links:desired}},caller,signal);
+  return async()=>{
+    const latest=await app.dispatch('connection.get',{id},caller);
+    if(JSON.stringify(latest.links??[])!==JSON.stringify(desired))return;
+    await app.dispatch('connection.update',{id,revision:String(latest.revision),change:{links:prior??[]}},caller);
   };
-  const changed=prior!==code;
-  if(changed)await replaceSource(file,code);
-  const undo=async()=>{
-    if(!changed||await readFile(file,'utf8')!==code)return;
-    await replaceSource(file,prior);
-    if(rel.enabled!==false)await activate();
-  };
-  try{if(rel.enabled!==false)await activate(signal);}
-  catch(error){await undo();throw error;}
-  return undo;
 }
 function projectFiles(data,root,adapter){
   return {...Object.fromEntries(Object.entries(data.catalog).map(([k,v])=>[k,v.initialConfig])),

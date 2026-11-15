@@ -3,7 +3,7 @@ import {useLocation, useMatch, useNavigate, useSearchParams} from 'react-router'
 import {noteHref, withSession} from '@dsh-workbench/runtime';
 import {composeQueries,useMutation,useResource,useUi,type QueryStateSource} from '@dsh-workbench/react';
 import {ui} from './messages';
-import { Button } from '@heroui/react/button';
+import { Button } from '@/components/ui/button';
 import {previewRows as hostRows,rowState} from './projection';
 type PreviewTask={id:string;label:string;surfaces:string[];status:'pending'|'running'|'completed'|'failed'|'unknown'|'skipped';error?:string};
 import type {PreviewProgress} from '@dsh-workbench/runtime';
@@ -130,7 +130,7 @@ export function Glyph({path,size=15,filled=false}:{path:string;size?:number;fill
 
 export function TransportButton({path,filled,label,primary,onClick,disabled,loading}:{path:string;filled?:boolean;label:string;primary?:boolean;onClick:()=>void;disabled?:boolean;loading?:boolean}){
   useUi(ui);
-  return <Button variant="tertiary" size="sm" type="button" className={`preview-transport-button${primary?' preview-transport-primary':''}`} aria-label={label} isDisabled={disabled} onClick={onClick}
+  return <Button variant="ghost" size="sm" type="button" className={`preview-transport-button${primary?' preview-transport-primary':''}`} aria-label={label} disabled={disabled} onClick={onClick}
     style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:primary?36:32,height:primary?36:32,borderRadius:primary?18:16,border:0,background:primary?'var(--wb-accent)':'var(--wb-surface)',color:primary?'var(--wb-accent-foreground)':disabled?'var(--wb-muted-light)':'var(--wb-ink-soft)',cursor:disabled?'default':'pointer',padding:0,fontFamily:'inherit',flexShrink:0}}>
     <span title={label} className={loading?'preview-spinner':undefined}><Glyph path={loading?GLYPH.reload:path} filled={!loading&&filled} size={primary?16:14}/></span>
   </Button>;
@@ -142,7 +142,7 @@ export function DeviceSwitcher({device,onClick}:{device:DeviceKey;onClick:()=>vo
   const next=DEVICES[(DEVICES.findIndex(item=>item.key===current.key)+1)%DEVICES.length];
   const icon=current.key==='desktop'?GLYPH.deviceDesktop:current.key==='phone'?GLYPH.devicePhone:GLYPH.devicePad;
   const label=ui("切换设备：当前 {p0}，点击切换到 {p1}", { p0: current.label, p1: next.label });
-  return <Button variant="tertiary" size="sm" type="button" className="preview-transport-button preview-device-switcher" aria-label={label} onClick={onClick}
+  return <Button variant="ghost" size="sm" type="button" className="preview-transport-button preview-device-switcher" aria-label={label} onClick={onClick}
     style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:32,height:32,border:0,borderRadius:16,background:'var(--wb-surface)',color:'var(--wb-ink-soft)',cursor:'pointer',padding:0,fontFamily:'inherit',flexShrink:0}}>
     <Glyph path={icon} size={14}/>
   </Button>;
@@ -344,8 +344,8 @@ export function usePreviewModel(){
   const repairButton=(row:Row)=>{
     const failure=row.host?.failure;
     if(!failure)return null;
-    if(failure.session)return <Button variant="tertiary" size="sm" onPress={()=>void navigate(withSession(location.pathname+location.search,failure.session!))}>{ui("查看修复会话")}</Button>;
-    if(!failure.handling||['delivery-failed','agent-unknown','awaiting-approval','exhausted'].includes(failure.handling))return <Button variant="tertiary" size="sm" isDisabled={repairMutation.statusFor(JSON.stringify([row.owner.key,row.surface??'']))==='pending'||row.activeOperation} onPress={()=>void requestRepair(row)}>{ui(failure.handling?"重新通知连线":"交给 Agent 修复")}</Button>;
+    if(failure.session)return <Button variant="ghost" size="sm" onClick={()=>void navigate(withSession(location.pathname+location.search,failure.session!))}>{ui("查看修复会话")}</Button>;
+    if(!failure.handling||['delivery-failed','agent-unknown','awaiting-approval','exhausted'].includes(failure.handling))return <Button variant="ghost" size="sm" disabled={repairMutation.statusFor(JSON.stringify([row.owner.key,row.surface??'']))==='pending'||row.activeOperation} onClick={()=>void requestRepair(row)}>{ui(failure.handling?"重新通知连线":"交给 Agent 修复")}</Button>;
     return null;
   };
 
