@@ -2,7 +2,7 @@
 
 一套供个人开发剧情向、搜打撤卡牌游戏的 Worka 桌面。游戏代码、Markdown 剧情和素材继续保存在 CardGame 仓库。平时从 Worka 原生输入框提要求，在便笺里看内容、用框选留言反馈，在「试玩」里操作真实游戏。
 
-![Worka 浅色外观中的卡牌游戏创作室](docs/worka-home.png)
+![Worka 中的卡牌游戏创作室](docs/worka-home.jpg)
 
 ## 导入
 
