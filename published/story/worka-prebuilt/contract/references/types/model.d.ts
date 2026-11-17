@@ -64,12 +64,14 @@ export declare const storyConfigSchema: z.ZodObject<{
         provider: z.ZodString;
         connectionId: z.ZodString;
     }, z.core.$strip>>>;
+    kind: z.ZodOptional<z.ZodLiteral<"story">>;
 }, z.core.$strip>;
 export declare const note: import("@dsh-workbench/runtime").NoteModel<{}, z.ZodObject<{
     connections: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
         provider: z.ZodString;
         connectionId: z.ZodString;
     }, z.core.$strip>>>;
+    kind: z.ZodOptional<z.ZodLiteral<"story">>;
 }, z.core.$strip>>;
 export declare const readInputSchema: z.ZodObject<{
     path: z.ZodString;

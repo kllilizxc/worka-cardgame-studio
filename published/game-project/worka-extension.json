@@ -10,9 +10,9 @@
     ".gitattributes": "d6504560a89539dfc9e0a7d9d0b37e48d526efd4b5d52f12d836704ba5545256",
     "LICENSE": "3cd5a7b5de3c6f613966844f184149fb859ff4fe216109e732a2cc7489829d19",
     "cordis.patch.yml": "dc745bd0ebc79c13ed4e8bf43e466c5702b1d549d29d4272b5d23645c2f3861e",
-    "index.mjs": "8377887415782c44a9e51e18eea1e723c2c92dbe70c5fa4cbdeb4b497a780b8a",
+    "index.mjs": "b10ce4b1bd80ff14be5179186d048d5dcc31ea3ddf697ff1677ac49a06a8e28c",
     "package.json": "bdb894fd9a18f236e3d30e5db655dabec9cfcc7158b11b0962c962048d74ff9f"
   },
   "dataVersion": 1,
-  "integrity": "sha256-a9f4ead16e0ac571f0c5b2890d24eb41628bdbffe002b21bee0ee2dfbb77e498"
+  "integrity": "sha256-26bce6804cd9afd84274dcba42fd5be6a723507d14f8e4bd7e50c528452fec4e"
 }

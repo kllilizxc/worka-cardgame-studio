@@ -42,6 +42,7 @@ export type TreeItem=z.infer<typeof treeItemSchema>;
 
 export const storyConfigSchema=z.object({
   connections:z.record(z.string(),z.object({provider:z.string(),connectionId:z.string()})).optional(),
+  kind:z.literal('story').optional(),
 });
 
 export const note=defineNote({
@@ -53,7 +54,7 @@ export const note=defineNote({
     id:'/id',
     label:'/title',
   }],
-  config:{schema:storyConfigSchema,defaults:{}},
+  config:{schema:storyConfigSchema,defaults:{kind:'story'}},
 });
 
 export const readInputSchema=z.object({

@@ -35,7 +35,7 @@ async function createFixture(dir){
     for(const kind of ['story','cards','media']){
       const noteId=`${id}-${kind}`;
       notes.set(noteId,{id:noteId,desktopId:id});
-      records.set(`states/${noteId}:config`,{...(kind==='story'?{}:{kind}),connections:{game:reference}});
+      records.set(`states/${noteId}:config`,{kind,connections:{game:reference}});
     }
   }
   const emit=(table,key)=>{for(const fn of [...coreListeners])fn({changes:[{table,key}]});};
@@ -191,6 +191,69 @@ test('worktree branch commit and OK merge into main push to remote and update bo
         assert.equal(git(remote,'rev-parse','refs/heads/main'),branchSha);
         const merged=await provider.resources.catalog.query.load({op:'record',id:'BELL_01'},ctx('one-cards'));
         assert.equal(merged?.title,'雾隐铜铃');
+      }finally{
+        stop();
+      }
+    }finally{
+      await provider.close();
+    }
+  }finally{
+    await rm(root,{recursive:true,force:true});
+  }
+});
+
+test('N reads share one cached projection until a file change triggers exactly one rebuild, and home resolves peers once',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'live-projection-cache-'));
+  try{
+    const f=await createFixture(root);
+    let builds=0,listNotesCalls=0,connectionsCalls=0;
+    const origListNotes=f.host.app.core.listNotes,origConnections=f.host.app.skillConnections.list;
+    f.host.app.core.listNotes=async(...args)=>{listNotesCalls++;return origListNotes(...args);};
+    f.host.app.skillConnections.list=async(...args)=>{connectionsCalls++;return origConnections(...args);};
+
+    const provider=gameProject(f.host,{onBuild:()=>{builds++;}});
+    try{
+      await provider.invoke('bind',{desktopId:'one',source:f.game},{kind:'user'});
+      assert.equal(builds,0);
+
+      let invalidations=0;
+      const stop=provider.resources.catalog.query.subscribe({op:'page'},()=>{invalidations++;},ctx('one-cards'));
+      try{
+        await sleep(80);
+        // Perform 8 reads across catalog, story, and asset: must trigger only 1 projection build!
+        listNotesCalls=0;connectionsCalls=0;
+        const home=await provider.resources.catalog.query.load({op:'home'},ctx('one-cards'));
+        assert.equal(home.records.length,2); // deck + FOX_01
+        assert.equal(listNotesCalls,1);
+        assert.equal(connectionsCalls,1);
+
+        await Promise.all([
+          provider.resources.catalog.query.load({op:'page',page:1},ctx('one-cards')),
+          provider.resources.catalog.query.load({op:'record',id:'FOX_01'},ctx('one-cards')),
+          provider.resources.catalog.query.load({op:'overview'},ctx('one-cards')),
+          provider.resources.story.query.load({op:'scenes'},ctx('one-story')),
+          provider.resources.story.query.load({op:'scene',id:'forest_gate'},ctx('one-story')),
+          provider.resources.story.query.load({op:'home'},ctx('one-story')),
+          provider.resources.asset.query.load({id:'asset:public/assets/test.png'},ctx('one-cards')),
+        ]);
+        assert.equal(builds,1);
+
+        // Modify a file on disk: watcher clears the cache, and subsequent N reads trigger exactly 1 rebuild!
+        const beforeInvalidations=invalidations;
+        await writeFile(join(f.game,'public/data/cards/units.json'),JSON.stringify({units:[
+          {id:'FOX_01',kind:'unit',name:'缓存更新灵狐',cost:1,attack:5,health:3,cardFace:{artwork:'public/assets/test.png'}},
+        ]}));
+        await until(()=>invalidations>beforeInvalidations,'expected watcher invalidation after file change');
+
+        const [rec,page,scene]=await Promise.all([
+          provider.resources.catalog.query.load({op:'record',id:'FOX_01'},ctx('one-cards')),
+          provider.resources.catalog.query.load({op:'page',page:1},ctx('one-cards')),
+          provider.resources.story.query.load({op:'scene',id:'forest_gate'},ctx('one-story')),
+        ]);
+        assert.equal(rec.title,'缓存更新灵狐');
+        assert.equal(page.total,2);
+        assert.equal(scene.scene.id,'forest_gate');
+        assert.equal(builds,2);
       }finally{
         stop();
       }

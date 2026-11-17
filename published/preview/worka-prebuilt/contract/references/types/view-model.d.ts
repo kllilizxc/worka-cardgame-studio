@@ -121,6 +121,7 @@ export declare function failureMessage(row: Row, error: string): {
 };
 /** Structured handoff keeps arbitrary candidate/surface names unambiguous. */
 export declare function previewFocus(key: string, surface?: string): string;
+export declare function previewEmbedKey(specKey: string, access: string): string;
 export declare function usePreviewModel(): {
     reportOpen: boolean;
     setReportOpen: (value: boolean) => void;

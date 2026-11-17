@@ -8,7 +8,7 @@ import { ui } from './messages';
 import { Button } from '@/components/ui/button';
 import { NoteGuidance, NoteIcon } from '@realiz3r/worka-react';
 import type { CSSProperties } from 'react';
-import { STATUS, TONE, FONT, MONO, GLYPH, Glyph, TransportButton, DeviceSwitcher, PreviewLoading, failureMessage, canViewPreview, navigationUrl } from './view-model';
+import { STATUS, TONE, FONT, MONO, GLYPH, Glyph, TransportButton, DeviceSwitcher, PreviewLoading, failureMessage, canViewPreview, navigationUrl, previewEmbedKey } from './view-model';
 import { usePreviewModel } from './view-model';
 export default function ExpandedView() { return useRoutes(routes); }
 export function PreviewLayout() {
@@ -290,7 +290,7 @@ export function PreviewLayout() {
     {/* stage */}
     <div ref={stage} className="preview-stage" data-candidate-id={current?.owner.key} style={{ position: 'relative', flex: 1, minHeight: 0, borderRadius: 10, overflow: 'hidden' }}>
       {shared ? <div className="preview-empty-state"><NoteIcon icon={metadata.icon} size={32}/><strong>{current?.name ?? ui('暂无候选')}</strong><span className="preview-empty-copy">{!current ? ui('主人尚未添加预览候选。') : !metadata.access?.previews ? ui('主人尚未允许打开关联预览。') : canViewPreview(current.status) ? ui('预览将在独立页面打开，可直接操作页面内容。') : ui('当前状态：{p0}，等待主人处理。', { p0: STATUS[current.status] ?? current.status })}</span>{current && canViewPreview(current.status) && <Button size="sm" disabled={!currentUrl} onClick={() => run(() => workbench.openExternal(currentUrl))}>{ui('在新标签页打开预览')}</Button>}</div> : <>
-      {embedRows.filter(row => canViewPreview(row.status)).map(row => <ManagedEmbed key={row.spec.key + ':' + model.accessKey(row)} embedKey={row.spec.key + ':' + model.accessKey(row)} className="preview-embed" target={urlsFor(row)} title={ui("{p0} 内嵌预览", { p0: label(row.spec) })} onClose={() => closePreview(row.spec.key)} style={{ position: 'absolute', top: 0, left: '50%', width: '100%', maxWidth: activeDevice.maxWidth, height: '100%', transform: 'translateX(-50%)', background: 'var(--background)', display: current?.spec.key === row.spec.key ? 'flex' : 'none' }}/>)}
+      {embedRows.filter(row => canViewPreview(row.status)).map(row => { const embedKey = previewEmbedKey(row.spec.key, model.accessKey(row)); return <ManagedEmbed key={embedKey} embedKey={embedKey} className="preview-embed" target={urlsFor(row)} title={ui("{p0} 内嵌预览", { p0: label(row.spec) })} onClose={() => closePreview(row.spec.key)} style={{ position: 'absolute', top: 0, left: '50%', width: '100%', maxWidth: activeDevice.maxWidth, height: '100%', transform: 'translateX(-50%)', background: 'var(--background)', display: current?.spec.key === row.spec.key ? 'flex' : 'none' }}/>; })}
       {showFailure && current && failure && <div className="preview-failure-overlay" data-status={current.status} role="alert" aria-labelledby="preview-failure-title" aria-describedby="preview-failure-description" style={{ position: 'absolute', inset: 0, overflow: 'auto', display: 'grid', alignItems: 'center', padding: '32px 24px', boxSizing: 'border-box' }}>
         <div className="preview-failure" key={current.spec.key}>
           <div className="preview-failure-mark" aria-hidden="true"><Glyph path={GLYPH.warning} size={22}/></div>

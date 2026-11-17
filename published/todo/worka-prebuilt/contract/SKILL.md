@@ -30,8 +30,8 @@ When recording a blocker, explain who can unblock it and the concrete next step.
 
 ## 卡牌游戏创作室
 
-本桌面的制作事项在已绑定 CardGame 仓库（路径与 `playtest/preview.config.mjs` 适配器见上下文中的 `game-project` 说明）的独立 Git 分支/工作树上实施：
+本桌面的制作事项在已绑定 CardGame 仓库（路径与 `playtest/preview.config.mjs` 适配器见上下文中的 `game-project` 说明）目录之外的独立 Git 分支/工作树上实施：
 
-1. 开工时若有相关旧点子，在对话中一并提及并结合本次需求处理；创建独立分支与工作树（如 `git -C <gameRoot> worktree add <dir> -b feat/<slug> main`），修改游戏文件并运行游戏的检查（相关 `bun test` 或 `bun run typecheck`），提交得到完整 40 位 `commit`。
+1. 开工时若有相关旧点子，在对话中一并提及并结合本次需求处理；在绑定仓库目录之外创建独立分支与工作树（如 `git -C <gameRoot> worktree add /tmp/cardgame-wt-<slug> -b feat/<slug> main`，绝不放在 `<gameRoot>` 目录内以免触发主目录文件监听），在工作树中修改游戏文件并运行当前通过的游戏检查（`bun test src/game/content/contentCatalog.test.ts src/game/content/contentDisplayNames.test.ts src/game/types/storyContent.test.ts src/game/types/prototypeExpeditionContent.test.ts` 与 `bun run build-nolog`），提交得到完整 40 位 `commit`。
 2. 调用「试玩」便笺的 `receive`：`{key: itemId, title, adapter, repos: {game: {repo: gameRoot, commit}}, options: {entry: {kind: "story"|"map"|"encounter", resourceId, nodeId?}}, originNoteId: 本Todo的noteId, delegationId: itemId, start: true, embed: true}`，核对候选启动就绪后在对话中发出试玩链接（格式 `[/notes/<试玩noteId>/candidates/<itemId>]`，即 Markdown 链接指向 `/notes/<试玩noteId>/candidates/<itemId>`），并用 `recordProgress` 保持 `in_progress` 等待试玩反应。
 3. 试玩反馈回到本会话：如需调整，在同一分支继续提交并用同一 `key` 更新 `receive`；当用户回复 `OK` 时，将分支合入绑定仓库的 `main`（若 `origin` 是 GitHub 远端则执行 `git -C <gameRoot> push origin main`），清理临时工作树与分支，并调用 `recordProgress({itemId, status: "done", summary, conclusion})` 完成事项。

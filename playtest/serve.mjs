@@ -18,10 +18,6 @@ const server=await createServer({
         res.end(JSON.stringify({commit,scene:entry.scene}));
       });
     },
-    transformIndexHtml(html){
-      if(!process.env.STUDIO_QUERY)return html;
-      return html.replace('<head>','<head><script>if(!new URLSearchParams(location.search).get("workaCommit"))history.replaceState(null,"",location.pathname+"?"+'+JSON.stringify(process.env.STUDIO_QUERY)+'+location.hash);</script>');
-    },
     transform(source,id){
       if(entry.scene==='MainMenu'||!id.split('?')[0].endsWith('/src/game/scenes/Preloader.ts'))return;
       const start=/this\.scene\.start\(\s*['"]MainMenu['"]\s*\)/g;

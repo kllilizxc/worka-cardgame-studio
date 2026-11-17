@@ -6923,7 +6923,8 @@ var treeItemSchema = discriminatedUnion("kind", [
   object({ kind: literal("scene"), id: string2(), title: string2(), hasChildren: boolean2() })
 ]);
 var storyConfigSchema = object({
-  connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional()
+  connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional(),
+  kind: literal("story").optional()
 });
 var note = defineNote({
   records: [{
@@ -6934,7 +6935,7 @@ var note = defineNote({
     id: "/id",
     label: "/title"
   }],
-  config: { schema: storyConfigSchema, defaults: {} }
+  config: { schema: storyConfigSchema, defaults: { kind: "story" } }
 });
 var readInputSchema = object({
   path: string2(),

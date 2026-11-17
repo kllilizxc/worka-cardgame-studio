@@ -1,0 +1,2 @@
+var q,m,j,n=(f,c)=>{for(var[k,l,g]of q||[])for(var a=[f],o=globalThis,h=o.document,p,e,i,b,d;e=a.pop();)if(!m[e]&&(i=l[e])){m[e]=1;for(b=1;b<i.length;b++)a.push(g[i[b]]);if(!c&&e!==f&&(p=h&&h.head)){if(j===void 0)j=(b=h.querySelector("meta[property=csp-nonce]"))&&(b.nonce||b.getAttribute("nonce"))||"";if(d=h.createElement("link"),d.rel="modulepreload",d.crossOrigin="",j)d.nonce=j;d.href=new o.URL(i[0],k),p.appendChild(d)}}},x=(f,c,k,l)=>{for(var g={},a=0;a<c.length;a++)g[c[a]]=k[a];(q||=[]).push([f,g,c]),m||={},n(c[l],1)};
+export{n,x};

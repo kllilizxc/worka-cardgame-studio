@@ -1,0 +1,1 @@
+import{n}from"./entry-qp3ydmme.js";import{defineNoteView as e}from"@realiz3r/worka-react";var t={compact:()=>(n("w7q6jkqp"),import("./view-compact-w7q6jkqp.js")),expanded:()=>(n("6g6qx3va"),import("./view-expanded-6g6qx3va.js"))},r=e({...t,prerequisites:!1}),i=e(t);export{r as View,i as default};

@@ -1,6 +1,6 @@
 import { useLocation as useRecordLocation } from '@realiz3r/worka-react';
 import { useLocation, useMatch, useNavigate, useSearchParams } from 'react-router';
-import { noteHref } from '@realiz3r/worka-runtime';
+import { noteHref, sha256 } from '@realiz3r/worka-runtime';
 import { composeQueries, useMutation, useResource, useUi, type QueryStateSource } from '@realiz3r/worka-react';
 import { ui } from './messages';
 import { Button } from '@/components/ui/button';
@@ -230,6 +230,10 @@ function parsePreviewFocus(focus: string | undefined): {
         catch { }
     return { key: focus ?? '', structured: false };
 }
+export function previewEmbedKey(specKey: string, access: string) {
+    const key = `${specKey}:${access}`;
+    return key.length <= 160 ? key : `embed:${sha256(key)}`;
+}
 export function usePreviewModel() {
     useUi(ui);
     const { config, actions, useQuery, usePagedQuery, host: workbench, mode, layout, metadata } = useNote<typeof import('./actions')>();
@@ -369,7 +373,7 @@ export function usePreviewModel() {
     const currentIsCandidate = Boolean(current && selectableRows.some(row => row.owner.key === current.owner.key));
     const [resolvedUrls, setResolvedUrls] = useState<Record<string, string>>({});
     const [accessErrors, setAccessErrors] = useState<Record<string, string>>({});
-    const accessKey = (row: Row) => JSON.stringify([urls[row.spec.key] ?? row.url, row.host?.pass, reload[row.spec.key] ?? 0]);
+    const accessKey = (row: Row) => sha256(JSON.stringify([urls[row.spec.key] ?? row.url, row.host?.pass, reload[row.spec.key] ?? 0]));
     const requestedUrls = JSON.stringify(!shared && mode === 'expanded' && current ? [current].filter(row => canViewPreview(row.status)).map(row => ({ url: urls[row.spec.key] ?? row.url, key: accessKey(row) })) : []);
     useEffect(() => {
         let cancelled = false;
