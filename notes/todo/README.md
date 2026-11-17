@@ -19,6 +19,8 @@ An interactive Todo note built on the DSH Workbench native contract.
 
 A linked native conversation starting a turn moves its current unfinished task to in-progress. A stale observation, an archived link or task, and a completed task are left unchanged. A conversation ending does not mark business work complete. The board shows when a linked conversation is currently running.
 
+任务更新后排到最前面，重复写入和只读查询保留顺序。置顶编码使用全局递增修订号生成固定长度的逆序字符串，避免反复取中点耗尽排序精度；只有拖拽到相邻任务之间使用可变长度编码。旧编码可继续读取和拖拽，更新时只替换当前任务的编码，无需整表重排。完成与归档仍分别保存任务状态和归档标记。
+
 ### Paper appearance
 
 The journal keeps its content layout while controls use the shared Radix package. Colours follow semantic theme tokens in light and dark modes.

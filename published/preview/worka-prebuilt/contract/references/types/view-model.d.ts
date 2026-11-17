@@ -137,14 +137,14 @@ export declare function usePreviewModel(): {
             accepted: boolean;
             key: string;
             desired: "running" | "stopped";
-        }>;
+        }, unknown>;
         verify: import("@realiz3r/worka-react").Mutation<{
             key: string;
             surface?: string | undefined;
         }, {
             [x: string]: unknown;
             accepted: boolean;
-        }>;
+        }, unknown>;
         stop: import("@realiz3r/worka-react").Mutation<{
             key: string;
             surface?: string | undefined;
@@ -153,14 +153,14 @@ export declare function usePreviewModel(): {
             accepted: boolean;
             key: string;
             desired: "running" | "stopped";
-        }>;
+        }, unknown>;
         check: import("@realiz3r/worka-react").Mutation<{
             key: string;
             surface?: string | undefined;
         }, {
             [x: string]: unknown;
             accepted: boolean;
-        }>;
+        }, unknown>;
         archive: import("@realiz3r/worka-react").Mutation<{
             key: string;
         }, {
@@ -168,7 +168,7 @@ export declare function usePreviewModel(): {
             archived: boolean;
             key?: string | undefined;
             reason?: string | undefined;
-        }>;
+        }, unknown>;
         restore: import("@realiz3r/worka-react").Mutation<{
             key: string;
         }, {
@@ -176,14 +176,14 @@ export declare function usePreviewModel(): {
             restored: boolean;
             key?: string | undefined;
             reason?: string | undefined;
-        }>;
+        }, unknown>;
         forget: import("@realiz3r/worka-react").Mutation<{
             key: string;
         }, {
             [x: string]: unknown;
             removed: boolean;
             reason?: string | undefined;
-        }>;
+        }, unknown>;
     };
     focusPending: boolean;
     focusLoading: boolean;

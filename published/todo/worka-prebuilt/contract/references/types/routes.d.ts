@@ -1,9 +1,9 @@
 export declare const routes: {
     element: import("react").JSX.Element;
     children: ({
+        children?: undefined;
         index: true;
         element: null;
-        children?: undefined;
         path?: undefined;
     } | {
         path: string;

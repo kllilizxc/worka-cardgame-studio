@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "2f9ee276cdc00e41d0f49dd58d92e1490758b58893b631559f2cbdd927ae3f1f",
+  "codeVersion": "f97599f29233f2c96278ed478960c78cea475e4b56b2a9345a937d3c790c623d",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -26,7 +26,6 @@
     "references/types/record-links.d.ts",
     "references/types/requirement-editor.d.ts",
     "references/types/result-links.d.ts",
-    "references/types/route-search.d.ts",
     "references/types/route-state.d.ts",
     "references/types/routes.d.ts",
     "references/types/schedule.d.ts",

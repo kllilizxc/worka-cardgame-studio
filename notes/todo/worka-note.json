@@ -72,7 +72,6 @@
     "routes.tsx",
     "todo-layout.tsx",
     "mobile-lane.ts",
-    "route-search.ts",
     "todo-unblock.tsx",
     "preview.json"
   ]

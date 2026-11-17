@@ -1,4 +1,4 @@
-import { useMutation, useNote, useDraftMutation, useUi } from '@realiz3r/worka-react';
+import { useMutation, useNote, useUi } from '@realiz3r/worka-react';
 import { Button } from '@/components/ui/button';
 import { useEffect, useId, useInsertionEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { TodoAttachment } from './attachment-schema';
@@ -19,7 +19,7 @@ export function FileAttachments({ attachments = [], onChange, onBusyChange, uplo
     const { files } = useNote();
     // The SDK retains live File objects across real row unmounts. A reattached
     // editor retries unfinished transfers with the original file request ID.
-    const { draft: queue, mutate: saveUploads } = useDraftMutation({ key: uploadKey ?? 'todo-files-read-only', value: [] as Upload[],
+    const { draft: queue, mutate: saveUploads } = useMutation({ draft: { key: uploadKey ?? 'todo-files-read-only', value: [] as Upload[] },
         save: async (entries) => { await upload(entries); if (!alive.current)
             throw new Error(ui('请在待办编辑器中完成或移除附件上传')); return { value: [] }; },
     });

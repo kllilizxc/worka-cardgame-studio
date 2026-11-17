@@ -373,7 +373,7 @@ export function usePreviewModel() {
     const currentIsCandidate = Boolean(current && selectableRows.some(row => row.owner.key === current.owner.key));
     const [resolvedUrls, setResolvedUrls] = useState<Record<string, string>>({});
     const [accessErrors, setAccessErrors] = useState<Record<string, string>>({});
-    const accessKey = (row: Row) => sha256(JSON.stringify([urls[row.spec.key] ?? row.url, row.host?.pass, reload[row.spec.key] ?? 0]));
+    const accessKey = (row: Row) => JSON.stringify([urls[row.spec.key] ?? row.url, row.host?.pass, reload[row.spec.key] ?? 0]);
     const requestedUrls = JSON.stringify(!shared && mode === 'expanded' && current ? [current].filter(row => canViewPreview(row.status)).map(row => ({ url: urls[row.spec.key] ?? row.url, key: accessKey(row) })) : []);
     useEffect(() => {
         let cancelled = false;

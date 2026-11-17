@@ -3,9 +3,8 @@ import { useLocation as useRecordLocation, NoteDialog } from '@realiz3r/worka-re
 import { Outlet, useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { noteHref } from '@realiz3r/worka-runtime';
 import { readTodoFilters, updateTodoFilter } from './route-state';
-import { useRouteSearch } from './route-search';
 import { getLocale } from '@realiz3r/worka-runtime';
-import { useMutation, useNote, useResource, QueryState } from '@realiz3r/worka-react';
+import { useMutation, useNote, useResource, useRouteSearch, QueryState } from '@realiz3r/worka-react';
 import { Button } from '@/components/ui/button';
 import { Toggle } from "@/components/ui/toggle";
 import React, { useEffect, useMemo, useRef, useState } from 'react';

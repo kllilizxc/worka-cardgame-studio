@@ -264,3 +264,46 @@ test('N reads share one cached projection until a file change triggers exactly o
     await rm(root,{recursive:true,force:true});
   }
 });
+
+test('rebinding a desktop closes the old root watcher only after its last desktop leaves',async()=>{
+  const {watch:watchFs}=await import('node:fs');
+  const root=await mkdtemp(join(tmpdir(),'live-rebind-watcher-'));
+  try{
+    const f=await createFixture(root),second=join(root,'game-two');
+    git(root,'clone','-q',f.game,second);
+    const gameA=await realpath(f.game),gameB=await realpath(second);
+    const activeWatchers=new Map();
+    const watch=(dir,opts,listener)=>{
+      const raw=watchFs(dir,opts,listener);
+      const tracked={closed:false};
+      activeWatchers.set(dir,tracked);
+      const origClose=raw.close.bind(raw);
+      raw.close=()=>{tracked.closed=true;return origClose();};
+      return raw;
+    };
+
+    const provider=gameProject(f.host,{watch});
+    try{
+      await provider.invoke('bind',{desktopId:'one',source:gameA},{kind:'user'});
+      await provider.invoke('bind',{desktopId:'two',source:gameA},{kind:'user'});
+      await provider.resources.catalog.query.load({op:'overview'},ctx('one-cards'));
+      assert.equal(activeWatchers.get(gameA)?.closed,false);
+
+      // Desktop 'one' rebinds to gameB while desktop 'two' still uses gameA -> gameA watcher stays open!
+      await provider.invoke('bind',{desktopId:'one',source:gameB},{kind:'user'});
+      await provider.resources.catalog.query.load({op:'overview'},ctx('one-cards'));
+      assert.equal(activeWatchers.get(gameA)?.closed,false);
+      assert.equal(activeWatchers.get(gameB)?.closed,false);
+
+      // Desktop 'two' now also rebinds to gameB -> no desktop uses gameA -> gameA watcher is closed!
+      await provider.invoke('bind',{desktopId:'two',source:gameB},{kind:'user'});
+      assert.equal(activeWatchers.get(gameA)?.closed,true);
+      assert.equal(activeWatchers.get(gameB)?.closed,false);
+    }finally{
+      await provider.close();
+      assert.equal(activeWatchers.get(gameB)?.closed,true);
+    }
+  }finally{
+    await rm(root,{recursive:true,force:true});
+  }
+});

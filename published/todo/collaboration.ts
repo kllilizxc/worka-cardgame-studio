@@ -45,7 +45,7 @@ export const moveTodo = note.mutation({ description: '将待办移动到目标�
     cursor = page.next;
   } while (cursor);
   const item = { ...business(moving), status: input.status, completed: input.status === 'done' };
-  return { id: input.id, status: input.status, index: targetIndex ?? index, revision: await saveItem(ctx, item, input.id, between(previous, next)) };
+  return { id: input.id, status: input.status, index: targetIndex ?? index, revision: await saveItem(ctx, item, input.id, previous === undefined ? undefined : between(previous, next)) };
 });
 function validateTodoImages(images: TodoImage[] | undefined): void {
   if (images === undefined) return;

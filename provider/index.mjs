@@ -118,10 +118,15 @@ const formats={
   '.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.oga':'audio/ogg','.m4a':'audio/mp4','.aac':'audio/aac','.flac':'audio/flac','.opus':'audio/ogg',
 };
 
-export function gameProject(host,{onBuild}={}){
-  const app=host.app,pending=new Map(),roots=new Map(),fileCaches=new Map();
+export function gameProject(host,{onBuild,watch=watchFs}={}){
+  const app=host.app,pending=new Map(),roots=new Map(),fileCaches=new Map(),desktopRoots=new Map();
   let closing=false;
   function directory(id){return join(host.dataRoot,'providers',name,digest(id));}
+  async function readDesktopBinding(id){
+    const b=await binding(app,id);
+    if(b?.root)desktopRoots.set(id,b.root);else desktopRoots.delete(id);
+    return b;
+  }
 
   function cachesFor(root){
     let entry=fileCaches.get(root);
@@ -162,13 +167,24 @@ export function gameProject(host,{onBuild}={}){
     return {root,catalogByKind,catalogMap,scenes,sceneMap,initialScene:story.initialConfig.initialScene,tree,linksBySource};
   }
 
+  function closeRoot(root){
+    const state=roots.get(root);
+    if(state){
+      clearTimeout(state.timer);
+      state.fsWatcher?.close();
+      state.cached=null;
+      roots.delete(root);
+    }
+    fileCaches.delete(root);
+  }
+
   function ensureRoot(root){
     let entry=roots.get(root);
     if(entry)return entry;
     entry={listeners:new Set(),timer:undefined,fsWatcher:undefined,epoch:0,cached:null};
     if(!closing){
       try{
-        entry.fsWatcher=watchFs(root,{recursive:true},(_event,filename)=>{
+        entry.fsWatcher=watch(root,{recursive:true},(_event,filename)=>{
           if(ignoredWatchPath(filename))return;
           entry.epoch++;
           entry.cached=null;
@@ -251,7 +267,7 @@ export function gameProject(host,{onBuild}={}){
     const config=noteRecord?.config??(await app.core.readRecord('states',noteId+':config'))?.value;
     const kind=config?.kind;
     if(!contentKinds.includes(kind))throw Error('便笺不属于游戏内容库');
-    const b=await binding(app,stored.desktopId);
+    const b=await readDesktopBinding(stored.desktopId);
     return {id:stored.desktopId,noteId,kind,b};
   }
 
@@ -261,9 +277,10 @@ export function gameProject(host,{onBuild}={}){
     let disposed=false,stopRoot=()=>{},currentRoot='';
     const syncWatcher=async()=>{
       if(disposed||closing)return;
-      const b=await binding(app,desktopId).catch(()=>undefined);
+      const b=await readDesktopBinding(desktopId).catch(()=>undefined);
       const nextRoot=b?.root||'';
       if(disposed||closing||nextRoot===currentRoot)return;
+      if(nextRoot&&desktopRoots.get(desktopId)!==nextRoot)return;
       stopRoot();currentRoot=nextRoot;
       if(nextRoot){
         const entry=ensureRoot(nextRoot),fn=()=>invalidate();
@@ -436,7 +453,22 @@ export function gameProject(host,{onBuild}={}){
     return 'data:'+previewMime+';base64,'+preview.toString('base64');
   }
 
+  async function rootUsedElsewhere(root,excludeId){
+    const desktopIds=new Set(desktopRoots.keys());
+    if(typeof app.core.listNotes==='function'){
+      for(const row of await app.core.listNotes()){
+        if(row.value?.desktopId&&!row.value.archived)desktopIds.add(row.value.desktopId);
+      }
+    }
+    for(const otherId of desktopIds){
+      if(otherId===excludeId)continue;
+      if((await readDesktopBinding(otherId))?.root===root)return true;
+    }
+    return false;
+  }
+
   async function bind(id,source,caller,signal){
+    const prior=await readDesktopBinding(id);
     const origin=typeof source==='string'&&source.trim()?source.trim():defaultRepo;
     const dir=directory(id);
     const root=await checkout(origin,dir,signal);
@@ -451,7 +483,11 @@ export function gameProject(host,{onBuild}={}){
     const existing=roots.get(root);
     if(existing){existing.epoch++;existing.cached=null;}
     signal?.throwIfAborted();
+    desktopRoots.set(id,root);
     await app.core.writeRecord('states',recordKey(id),{source:origin,root,commit,verifiedAt:Date.now()});
+    if(prior?.root&&prior.root!==root&&!await rootUsedElsewhere(prior.root,id)){
+      closeRoot(prior.root);
+    }
     return {root,commit};
   }
 
@@ -467,7 +503,7 @@ export function gameProject(host,{onBuild}={}){
     },
     async noteContext(note){
       if(!note?.desktopId)return [];
-      const b=await binding(app,note.desktopId);
+      const b=await readDesktopBinding(note.desktopId);
       if(!b?.root)return [];
       let adapter='';
       if(typeof app.dispatch==='function'){
@@ -490,12 +526,8 @@ export function gameProject(host,{onBuild}={}){
     },
     beginClose(){
       closing=true;
-      for(const state of roots.values()){
-        clearTimeout(state.timer);
-        state.fsWatcher?.close();
-        state.cached=null;
-      }
-      roots.clear();
+      for(const root of [...roots.keys()])closeRoot(root);
+      desktopRoots.clear();
     },
     async close(){
       this.beginClose();
