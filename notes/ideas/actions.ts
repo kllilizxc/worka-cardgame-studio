@@ -5,16 +5,6 @@ export {note} from './model';
 const idSchema=z.string().regex(/^[\w.-]{1,128}$/);
 const recordSchema=row.extend({id:idSchema});
 
-export const saved=note.event({
-  name:'ideas.saved',
-  visibility:'public',
-  description:'点子已存入或更新。',
-  payload:recordSchema,
-  objectRef:'/id',
-  objectLabel:'/title',
-  revision:'/revision',
-});
-
 export const idea=note.query({visibility:'public',description:'读取点子的原话、标题、分类与标签。',input:z.object({id:idSchema}),output:recordSchema.nullable(),objectRef:'/id'},
   (ctx,{id})=>ctx.db.get('ideas',id));
 
@@ -38,7 +28,7 @@ export const findIdeas=note.query({visibility:'public',description:'搜索标题
     }
   });
 
-export const remember=note.mutation({visibility:'public',description:'按稳定 ID 保存一条点子原话，并发布 ideas.saved 事件。更新已有记录时传 expectedRevision。',
+export const remember=note.mutation({visibility:'public',description:'按稳定 ID 保存一条点子原话。更新已有记录时传 expectedRevision。',
   input:z.object({id:idSchema,...fields,expectedRevision:z.number().int().nonnegative().optional()}),output:recordSchema,objectRef:'/id'},
   async(ctx,input)=>{
     const {id,expectedRevision,...values}=input;
@@ -47,7 +37,5 @@ export const remember=note.mutation({visibility:'public',description:'按稳定 
     if((previous?.revision??0)!==(expectedRevision??0))throw Error('这条点子已有更新，请重新读取。');
     const next={...values,revision:(previous?.revision??0)+1,updatedAt:Date.now()};
     await ctx.db.put('ideas',id,next);
-    const record={id,...next};
-    await saved.publish(ctx,record,{key:`${id}:${next.revision}`});
-    return record;
+    return {id,...next};
   });

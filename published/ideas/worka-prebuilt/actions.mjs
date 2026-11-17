@@ -20,8 +20,7 @@ __export(exports_actions, {
   findIdeas: () => findIdeas,
   idea: () => idea,
   note: () => note,
-  remember: () => remember,
-  saved: () => saved
+  remember: () => remember
 });
 
 
@@ -6685,15 +6684,6 @@ var note = defineNote({
 // actions.ts
 var idSchema2 = string2().regex(/^[\w.-]{1,128}$/);
 var recordSchema = row.extend({ id: idSchema2 });
-var saved = note.event({
-  name: "ideas.saved",
-  visibility: "public",
-  description: "点子已存入或更新。",
-  payload: recordSchema,
-  objectRef: "/id",
-  objectLabel: "/title",
-  revision: "/revision"
-});
 var idea = note.query({ visibility: "public", description: "读取点子的原话、标题、分类与标签。", input: object({ id: idSchema2 }), output: recordSchema.nullable(), objectRef: "/id" }, (ctx, { id }) => ctx.db.get("ideas", id));
 var cover = note.query({ visibility: "private", input: object({}), output: object({ title: string2(), countLabel: string2(), items: array(object({ id: string2(), title: string2(), category: string2() })) }) }, async (ctx) => {
   const page = await ctx.db.page("ideas", { orderBy: { updatedAt: "desc" }, select: ["title", "category"] });
@@ -6721,7 +6711,7 @@ var findIdeas = note.query({
 });
 var remember = note.mutation({
   visibility: "public",
-  description: "按稳定 ID 保存一条点子原话，并发布 ideas.saved 事件。更新已有记录时传 expectedRevision。",
+  description: "按稳定 ID 保存一条点子原话。更新已有记录时传 expectedRevision。",
   input: object({ id: idSchema2, ...fields, expectedRevision: number2().int().nonnegative().optional() }),
   output: recordSchema,
   objectRef: "/id"
@@ -6734,9 +6724,7 @@ var remember = note.mutation({
     throw Error("这条点子已有更新，请重新读取。");
   const next = { ...values, revision: (previous?.revision ?? 0) + 1, updatedAt: Date.now() };
   await ctx.db.put("ideas", id, next);
-  const record = { id, ...next };
-  await saved.publish(ctx, record, { key: `${id}:${next.revision}` });
-  return record;
+  return { id, ...next };
 });
 
 var SAVED_IMAGE_LIMITS = Object.freeze({ bytes: 512 * 1024, totalBytes: 2 * 1024 * 1024, count: 8, dimension: 1600 });
