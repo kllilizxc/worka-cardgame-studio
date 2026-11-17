@@ -1,12 +1,6 @@
 import {createHash} from 'node:crypto';
-import {execFile} from 'node:child_process';
-import {promisify} from 'node:util';
-import {createRequire} from 'node:module';
-import {watch as watchFs} from 'node:fs';
-import {access,mkdir,mkdtemp,readFile,realpath,rename,rm,stat} from 'node:fs/promises';
-import {dirname,extname,isAbsolute,join,relative,sep} from 'node:path';
-import {buildCatalog,catalogLinks} from '../tools/catalog-index.mjs';
-import {buildStory} from '../tools/story-index.mjs';
+import {join,sep} from 'node:path';
+import {createProjectProcess} from './project-process.mjs';
 import {search} from '../notes/catalog/search.ts';
 import {homeRecords} from '../notes/catalog/home.ts';
 import {ancestors,storyTree} from '../notes/story/story-tree.ts';
@@ -17,52 +11,9 @@ export const inject=['worka'];
 const catalogKinds=['map','encounter','cards','monsters','people','shop','media'];
 const contentKinds=['story',...catalogKinds];
 const digest=value=>createHash('sha256').update(value).digest('hex');
-const run=promisify(execFile);
 const defaultRepo='https://github.com/kllilizxc/CardGame';
 const missingMessage=`只问用户一个问题来选择 CardGame 游戏来源（默认仓库 ${defaultRepo}，会自动克隆；也可选择本机已检出的 CardGame 目录），然后用 extension.invoke({extension:"game-project",method:"bind",input:{source}}) 绑定。`;
 
-function contained(root,file){
-  const part=relative(root,file);
-  if(isAbsolute(part)||part==='..'||part.startsWith('..'+sep))throw Error('文件必须位于选定项目内');
-  return file;
-}
-async function inside(root,path){return contained(root,await realpath(join(root,path)));}
-function regularRemote(value){
-  const url=new URL(value);
-  if(url.protocol!=='https:'||url.hostname!=='github.com'||url.port||url.username||url.password||url.search||url.hash||!/^\/[a-z\d_.-]+\/[a-z\d_.-]+\/?$/i.test(url.pathname))throw Error('请提供本机绝对路径或不含凭据的 HTTPS GitHub 仓库地址');
-  return url.origin+url.pathname.replace(/\/$/,'').replace(/\.git$/,'')+'.git';
-}
-async function git(args,signal){
-  const result=await run('git',['-c','core.fsmonitor=false','-c','core.hooksPath='+(process.platform==='win32'?'NUL':'/dev/null'),...args],
-    {signal,encoding:'utf8',timeout:180000,maxBuffer:4*1024*1024,env:{...process.env,GIT_TERMINAL_PROMPT:'0',GIT_LFS_SKIP_SMUDGE:'1'}});
-  return result.stdout.trim();
-}
-async function checkout(source,dir,signal){
-  if(isAbsolute(source)){
-    const root=await realpath(source);
-    if(await realpath(await git(['-C',root,'rev-parse','--show-toplevel'],signal))!==root)throw Error('请选择 Git 工作树的根目录');
-    return root;
-  }
-  const url=regularRemote(source),managed=join(dir,'repos',digest(url));
-  await mkdir(dirname(managed),{recursive:true});
-  try{
-    await access(managed);
-    if(await git(['-C',managed,'config','--get','remote.origin.url'],signal)!==url)throw Error('已有托管检出的来源不匹配');
-    return await realpath(managed);
-  }catch(err){if(err.code!=='ENOENT')throw err;}
-  const temp=await mkdtemp(join(dirname(managed),'.clone-'));
-  try{
-    try{
-      await git(['clone','--no-checkout','--no-recurse-submodules','--',url,temp],signal);
-      const names=await git(['-C',temp,'config','--name-only','--get-regexp','^filter\\..*\\.(clean|smudge|process|required)$'],signal)
-        .catch(error=>{if(error.code===1)return '';throw error;});
-      const overrides=names.split(/\r?\n/).filter(Boolean).flatMap(key=>['-c',key+(key.endsWith('.required')?'=false':'=')]);
-      await git(['-C',temp,...overrides,'-c','submodule.recurse=false','checkout','--force','HEAD','--','.'],signal);
-    }catch(error){signal?.throwIfAborted();throw Error(error.killed?'获取游戏仓库超时。':'无法获取游戏仓库，请确认本机 Git 可以访问该地址。');}
-    await rename(temp,managed);
-  }finally{await rm(temp,{recursive:true,force:true});}
-  return await realpath(managed);
-}
 
 const recordKey=id=>'cardgame.project/'+digest(id);
 async function binding(app,id){return id?(await app.core.readRecord('states',recordKey(id)))?.value:undefined;}
@@ -113,13 +64,10 @@ function excerpt(text='',fallback=''){
   return (line?.slice(0,150)||fallback.slice(0,140)).trim();
 }
 
-const formats={
-  '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.avif':'image/avif','.bmp':'image/bmp','.svg':'image/svg+xml',
-  '.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.oga':'audio/ogg','.m4a':'audio/mp4','.aac':'audio/aac','.flac':'audio/flac','.opus':'audio/ogg',
-};
 
-export function gameProject(host,{onBuild,watch=watchFs}={}){
-  const app=host.app,pending=new Map(),roots=new Map(),fileCaches=new Map(),desktopRoots=new Map();
+export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}){
+  const project=createProjectProcess(host,processOptions),watch=watchOverride??project.watch;
+  const app=host.app,pending=new Map(),roots=new Map(),desktopRoots=new Map();
   let closing=false;
   function directory(id){return join(host.dataRoot,'providers',name,digest(id));}
   async function readDesktopBinding(id){
@@ -128,22 +76,14 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
     return b;
   }
 
-  function cachesFor(root){
-    let entry=fileCaches.get(root);
-    if(!entry){entry={hashCache:new Map(),gitCache:{}};fileCaches.set(root,entry);}
-    return entry;
-  }
-
   async function computeProjection(root){
     onBuild?.(root);
-    const {hashCache,gitCache}=cachesFor(root);
-    const [story,catalog]=await Promise.all([buildStory(root),Promise.resolve().then(()=>buildCatalog(root,{hashCache,gitCache}))]);
+    const {story,catalog,links:edges}=await project.request('build',[root]);
     const catalogByKind=Object.fromEntries(catalogKinds.map(k=>[k,catalog[k].initialConfig.records]));
     const catalogMap=Object.fromEntries(catalogKinds.map(k=>[k,new Map(catalogByKind[k].map(r=>[r.id,r]))]));
     const scenes=story.initialConfig.storyIndex;
     const sceneMap=new Map(scenes.map(s=>[s.id,s]));
     const tree=storyTree(scenes);
-    const edges=catalogLinks(catalog);
     const push=(fromKind,fromId,toKind,toId,label)=>{
       if(fromKind===toKind&&fromId===toId)return;
       edges.push({source:{noteId:fromKind,recordId:fromId},target:{noteId:toKind,recordId:toId},label:String(label||toId).slice(0,160)});
@@ -175,13 +115,12 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
       state.cached=null;
       roots.delete(root);
     }
-    fileCaches.delete(root);
   }
 
   function ensureRoot(root){
     let entry=roots.get(root);
-    if(entry)return entry;
-    entry={listeners:new Set(),timer:undefined,fsWatcher:undefined,epoch:0,cached:null};
+    if(entry?.fsWatcher)return entry;
+    entry??={listeners:new Set(),timer:undefined,fsWatcher:undefined,epoch:0,cached:null};
     if(!closing){
       try{
         entry.fsWatcher=watch(root,{recursive:true},(_event,filename)=>{
@@ -194,7 +133,7 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
             for(const fn of [...entry.listeners])fn();
           },25);
         });
-        entry.fsWatcher.on('error',()=>{entry.epoch++;entry.cached=null;});
+        entry.fsWatcher.on('error',()=>{entry.epoch++;entry.cached=null;entry.fsWatcher?.close();entry.fsWatcher=undefined;});
       }catch{
         entry.fsWatcher=undefined;
       }
@@ -305,9 +244,7 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
     const {b}=await member(ctx);
     if(!b?.root)return {configured:false,ready:false,message:missingMessage};
     try{
-      await access(await inside(b.root,'public/data/content-catalog.json'));
-      await access(await inside(b.root,'knowledge/index.md'));
-      const commit=await git(['-C',b.root,'rev-parse','--verify','HEAD^{commit}'],ctx.signal).catch(()=>b.commit||'');
+      const commit=await project.request('status',[b.root,b.commit],ctx.signal);
       return {ready:true,configured:true,verifiedAt:b.verifiedAt,label:'游戏仓库',root:b.root,...(commit?{commit}:{})};
     }catch{
       return {configured:false,ready:false,message:'无法读取已绑定的游戏目录。'+missingMessage};
@@ -407,17 +344,7 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
     const {b}=await member(ctx);
     if(!b?.root)return null;
     if(typeof input?.path!=='string'||!input.path.trim())throw Error('缺少项目文档路径');
-    const rawPath=input.path.replace(/^\/+/,''),file=await inside(b.root,rawPath);
-    const allowed=relative(b.root,file).split(sep).join('/'),format=extname(file).toLowerCase();
-    if(!['.md','.markdown','.mdown','.json'].includes(format))throw Error('不支持的项目文档格式');
-    const content=await readFile(file,'utf8'),rows=content.split(/\r?\n/);
-    const start=Math.max(1,Math.trunc(Number(input.startLine))||1);
-    const count=Math.min(500,Math.max(1,Math.trunc(Number(input.maxLines))||240))*Math.min(100,Math.max(1,Math.trunc(Number(input.pages))||1));
-    return {
-      resourcePath:join(b.root,'knowledge','index.md'),path:allowed,displayPath:allowed,format,
-      content:rows.slice(start-1,start-1+count).join('\n'),revision:digest(content),
-      startLine:start,endLine:Math.min(rows.length,start+count-1),totalLines:rows.length,
-    };
+    return project.request('document',[b.root,input],ctx.signal);
   }
 
   async function asset(input,ctx){
@@ -434,23 +361,7 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
       }
     }
     if(!sourcePath)return null;
-    const mime=formats[extname(sourcePath).toLowerCase()];
-    if(!mime)return null;
-    let file;
-    try{file=await inside(b.root,sourcePath);}catch{return null;}
-    const info=await stat(file).catch(()=>null);
-    if(!info||!info.isFile())return null;
-    if(info.size>32*1024*1024)throw Error('素材超过预览大小上限');
-    const bytes=await readFile(file);
-    let preview=bytes,previewMime=mime;
-    if(mime.startsWith('image/')&&mime!=='image/svg+xml'&&bytes.length>256*1024){
-      const require=createRequire(import.meta.url);
-      const sharp=createRequire(require.resolve('@realiz3r/worka/package.json'))('sharp');
-      preview=await sharp(bytes,{animated:false}).rotate().resize({width:600,height:600,fit:'inside',withoutEnlargement:true}).webp({quality:65,effort:2}).toBuffer();
-      previewMime='image/webp';
-    }
-    if(preview.length>700*1024)return null;
-    return 'data:'+previewMime+';base64,'+preview.toString('base64');
+    return project.request('asset',[b.root,sourcePath],ctx.signal);
   }
 
   async function rootUsedElsewhere(root,excludeId){
@@ -471,15 +382,10 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
     const prior=await readDesktopBinding(id);
     const origin=typeof source==='string'&&source.trim()?source.trim():defaultRepo;
     const dir=directory(id);
-    const root=await checkout(origin,dir,signal);
-    for(const path of ['public','public/data','knowledge','public/data/content-catalog.json','knowledge/index.md'])await inside(root,path);
-    for(const path of ['public/assets','public/assets/asset-manifest.json','art-references']){
-      try{await inside(root,path);}catch(error){if(error.code!=='ENOENT')throw error;}
-    }
-    const commit=await git(['-C',root,'rev-parse','--verify','HEAD^{commit}'],signal);
+    const root=await project.request('checkout',[origin,dir],signal,180000);
+    const commit=await project.request('validate',[root],signal);
     const members=await desktopNoteMap(id);
     if(!Object.keys(members).length)throw Error('当前桌面没有绑定游戏项目连接的便笺');
-    fileCaches.delete(root);
     const existing=roots.get(root);
     if(existing){existing.epoch++;existing.cached=null;}
     signal?.throwIfAborted();
@@ -509,7 +415,7 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
       if(typeof app.dispatch==='function'){
         const src=await app.dispatch('desktop.source',{desktopId:note.desktopId},{kind:'user'}).catch(()=>null);
         if(src?.directory){
-          try{adapter=await inside(await realpath(src.directory),'playtest/preview.config.mjs');}catch{}
+          try{adapter=await project.request('adapter',[src.directory]);}catch{}
         }
       }
       return [`已绑定 CardGame 仓库：${b.root}${adapter?`；试玩适配器：${adapter}`:''}。`];
@@ -528,12 +434,14 @@ export function gameProject(host,{onBuild,watch=watchFs}={}){
       closing=true;
       for(const root of [...roots.keys()])closeRoot(root);
       desktopRoots.clear();
+      return project.close();
     },
     async close(){
-      this.beginClose();
+      await this.beginClose();
       await Promise.allSettled([...pending.values()].map(v=>v.work));
-      fileCaches.clear();
+      await project.close();
     },
   };
 }
 export async function apply(ctx){const dispose=await ctx.worka.register(name,gameProject(ctx.worka));ctx.effect(()=>dispose,'CardGame project');}
+

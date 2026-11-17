@@ -40,3 +40,12 @@ node --test
 ```
 
 `published/` 为编译器生成的发布制品，不要手改其中的清单或哈希。源码许可参见 LICENSE。
+
+
+### 外部项目 I/O 隔离（2.0.1）
+
+项目路径解析、文件读取、索引、watch 与 Git 操作通过 Worka 现有托管子进程运行，不占用宿主的文件 I/O 线程池。路径/素材安全检查仍在实际读取前执行。每个 provider 只保留一个子进程，最多 16 个在途请求；普通请求 10 秒超时，checkout 180 秒。超时或取消会终止同代请求，等待旧进程回收后才允许后续调用创建新进程，不自动重试。强制终止 checkout 可能留下临时 `.clone-*` 目录。
+
+定向回归：`node --test tests/process-client.test.mjs tests/live-provider.test.mjs tests/project-io-isolation.test.mjs`。隔离测试在真实子进程中模拟四路文件操作挂起及线程池耗尽，验证宿主本地文件仍可读取、超时回收和下一次调用恢复；不替代 Windows/WSL 实机验证。
+
+此版本包含源码及重新构建的扩展制品；合并仓库不会自动替换已经安装的 1.0.0 扩展，需在 Worka 中更新/重新导入创作室后使用。

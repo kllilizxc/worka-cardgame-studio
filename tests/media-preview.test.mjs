@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {testSubprocess} from './subprocess-fixture.mjs';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
 import {mkdtemp,mkdir,copyFile,symlink,rm,readdir,stat} from 'node:fs/promises';
@@ -20,7 +21,7 @@ test('a large real game image produces a preview within the display limit withou
     const source=relative(game,file).split(sep).join('/');
     await mkdir(join(root,'node_modules/@realiz3r'),{recursive:true});
     await symlink(host,join(root,'node_modules/@realiz3r/worka'),'dir');
-    await copyFile(new URL('../published/game-project/index.mjs',import.meta.url),join(root,'index.mjs'));
+    for(const file of ['index.mjs','project-worker.mjs'])await copyFile(new URL('../published/game-project/'+file,import.meta.url),join(root,file));
     const {gameProject}=await import(pathToFileURL(join(root,'index.mjs')).href);
     const desktopId='fixture',noteId='cards';
     const binding={root:game,noteIds:{cards:noteId}};
@@ -28,7 +29,7 @@ test('a large real game image produces a preview within the display limit withou
       getNote:async()=>({value:{desktopId}}),
       readRecord:async(_table,key)=>key.endsWith(':config')?({value:{kind:'cards',connections:{game:{provider:'game-project',connectionId:'game-project'}}}}):({value:binding}),
     }};
-    const provider=gameProject({dataRoot:root,app});
+    const provider=gameProject({dataRoot:root,app,runtime:{subprocess:testSubprocess}});
     try{
       const data=await provider.resources.asset.query.load({key:source+'?v=stale-digest'},{scope:{noteId,providerConnection:{provider:'game-project',connectionId:'game-project',desktopId}}});
       assert.match(data,/^data:image\/webp;base64,/);
@@ -38,3 +39,4 @@ test('a large real game image produces a preview within the display limit withou
     }finally{await provider.close();}
   } finally {await rm(root,{recursive:true,force:true});}
 });
+
