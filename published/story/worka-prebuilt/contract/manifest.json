@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "ae4f0186297342a94273c0ea996fc957224f56a43121ce7542059cc0b2951937",
+  "codeVersion": "26d5e4d64b366ef328eed47132654c2b31a82bdc9923f753934a18d1309fb0ac",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -18,7 +18,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-story",
-    "description": "实时分页阅读与直接编辑游戏剧情原稿、章节分支及关联记录，并在检查通过后提交到 main。"
+    "description": "实时阅读和编辑剧情原稿。需要先试玩的改动与跨内容改动由一个制作事项负责。"
   },
   "typeErrors": []
 }
