@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import { cp, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 if(!process.versions.bun||!process.argv[2])throw Error('bun tools/verify-worka.mjs <Worka 源码目录>');
@@ -40,7 +40,9 @@ try{
     installedPlugins:(root,owner)=>plugins.installed(root,owner),
     onUserPrompt(){},defaultModel:()=>({provider:'fixture',model:'fixture'}),modelCatalog:async()=>({default:{provider:'fixture',model:'fixture'},groups:[]}),async metadata(){return {cwd:root,hasMessages:false};},async ensureWorkspace(){},enableWorkbenchContext(){},async restoreSession(){},async archiveSession(){},async rename(){},async ensureContext(){},interactions:()=>[],isRunning:()=>false,hasQueuedInput:()=>false,hasRunningAgents:()=>false,logger:{error(){},warn(){}},
     async spawn(spec){
-      assert.equal(spec.argv[0],nodes);assert.ok(spec.argv.includes(worker));spawns++;
+      assert.equal(spec.argv[0],nodes);
+      assert.ok(spec.argv.includes(worker) || spec.argv.slice(1).some(argument=>basename(argument)==='project-worker.mjs'));
+      spawns++;
       const child=spawn(spec.argv[0],spec.argv.slice(1),{cwd:spec.cwd,env:{...process.env,...spec.env},stdio:'pipe'});
       const done=new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',(exitCode,signal)=>resolve({exitCode,signal}));});
       return {stdin:child.stdin,stdout:child.stdout,stderr:child.stderr,done,terminate:()=>child.kill(),waitForExit:()=>done};
@@ -49,9 +51,9 @@ try{
   const core=await CoreStore.open(new MemoryRecordStorage()),app=new Workbench(core,native,root,root,{desktopSourcesRoot:join(root,'authors')});
   shutdown.push(()=>core.close(),()=>app.market.close(),()=>app.marketPublisher.close(),()=>app.desktopTemplates.close());
   shutdown.push(await registerSkillConnectionRecipes({skillRecipes:app.skillRecipes,register:async (_name,resource)=>resource.close},host));
-  let engine;
-  try{process.execPath=nodes;engine=new NoteIntegration(app.noteRuntimeCapabilities(),workerRoot,bun);}
-  finally{process.execPath=bun;}
+  // The isolated host runs in Bun, but both managed workers run in Node in production.
+  process.execPath=nodes;
+  const engine=new NoteIntegration(app.noteRuntimeCapabilities(),workerRoot,bun);
   app.engine=engine;shutdown.push(()=>engine.close());
   const extensionHost=createExtensionHost(app,engine.host,async()=>{});
   context.provide('worka',bindExtensionHostRegistration(extensionHost,context));
@@ -92,6 +94,7 @@ try{
   assert.ok(spawns>0);
   console.log('Worka 原生导入通过：'+notes.length+' 张便笺激活、'+connections.length+' 条连线启用、'+spawns+' 次原生 worker 启动。');
 }finally{
+  process.execPath=bun;
   for(const close of shutdown.reverse())await close();
   await rm(root,{recursive:true,force:true});
 }
