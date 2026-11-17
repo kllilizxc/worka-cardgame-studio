@@ -12,7 +12,7 @@ const catalogKinds=['map','encounter','cards','monsters','people','shop','media'
 const contentKinds=['story',...catalogKinds];
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const defaultRepo='https://github.com/kllilizxc/CardGame';
-const missingMessage=`只问用户一个问题来选择 CardGame 游戏来源（默认仓库 ${defaultRepo}，会自动克隆；也可选择本机已检出的 CardGame 目录），然后用 extension.invoke({extension:"game-project",method:"bind",input:{source}}) 绑定。`;
+const missingMessage='请选择游戏来源：使用默认仓库，或选择本机已检出的 CardGame 目录。';
 
 
 const recordKey=id=>'cardgame.project/'+digest(id);
