@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "packageName": "@kllilizxc/worka-cardgame-project",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "entry": "index.mjs",
   "capabilities": [
     "game-project"
@@ -10,10 +10,10 @@
     ".gitattributes": "d6504560a89539dfc9e0a7d9d0b37e48d526efd4b5d52f12d836704ba5545256",
     "LICENSE": "3cd5a7b5de3c6f613966844f184149fb859ff4fe216109e732a2cc7489829d19",
     "cordis.patch.yml": "dc745bd0ebc79c13ed4e8bf43e466c5702b1d549d29d4272b5d23645c2f3861e",
-    "index.mjs": "96995ba09754d9a9d03368251c0f0ed33e418d68d4eb473e073d4b8684835f89",
-    "package.json": "c8fc5c357db18116de6801b6662194fb030d2be38bfb07e334d185de6faf972f",
-    "project-worker.mjs": "fd510af3f7d017b392c3db7ee3661b7efb85b0704e96d96a52884ed94e62103d"
+    "index.mjs": "bd35cc94f82bbe7735a62b123da031ea900313c34e1d284945dfdc84bae49e89",
+    "package.json": "556314456dad843a5db25813a2c929a32be1d64a315e05f6857cacb7ff52dbcf",
+    "project-worker.mjs": "1f5bf48d9b446d3e88591cb20d5390f1f99506b07e90e3504bf4600734915187"
   },
   "dataVersion": 1,
-  "integrity": "sha256-02bbb312978288b02bbec0028e67beaaf8d9d8dd1c574a3016ece0f1c6921240"
+  "integrity": "sha256-80664acb395b62f6b40005fef8912256f89a485154655cb0541dd1f80beafa7c"
 }

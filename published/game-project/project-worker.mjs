@@ -504,7 +504,7 @@ function regularRemote(value) {
   return url.origin + url.pathname.replace(/\/$/, "").replace(/\.git$/, "") + ".git";
 }
 async function git2(args, signal) {
-  const result = await run("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"), ...args], { signal, encoding: "utf8", timeout: 180000, maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" } });
+  const result = await run("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"), ...args], { signal, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" } });
   return result.stdout.trim();
 }
 async function checkout(source, dir, signal) {
@@ -525,6 +525,7 @@ async function checkout(source, dir, signal) {
     if (err.code !== "ENOENT")
       throw err;
   }
+  signal?.throwIfAborted();
   const temp = await mkdtemp(join3(dirname2(managed), ".clone-"));
   try {
     try {
@@ -538,8 +539,9 @@ async function checkout(source, dir, signal) {
       await git2(["-C", temp, ...overrides, "-c", "submodule.recurse=false", "checkout", "--force", "HEAD", "--", "."], signal);
     } catch (error) {
       signal?.throwIfAborted();
-      throw Error(error.killed ? "获取游戏仓库超时。" : "无法获取游戏仓库，请确认本机 Git 可以访问该地址。");
+      throw Error("无法获取游戏仓库，请确认本机 Git 可以访问该地址。");
     }
+    signal?.throwIfAborted();
     await rename(temp, managed);
   } finally {
     await rm(temp, { recursive: true, force: true });
@@ -674,6 +676,7 @@ var operations = {
     return true;
   }
 };
+var checkouts = new Map;
 var input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on("line", (line) => {
   let request;
@@ -684,16 +687,24 @@ input.on("line", (line) => {
     input.close();
     return;
   }
+  if (typeof request.cancel === "number") {
+    checkouts.get(request.cancel)?.abort(Error("已取消获取游戏仓库。"));
+    return;
+  }
   const { id, method, args } = request;
+  const controller = method === "checkout" ? new AbortController : undefined;
+  if (controller)
+    checkouts.set(id, controller);
   Promise.resolve().then(() => {
     if (!Object.hasOwn(operations, method) || !Array.isArray(args))
       throw Error("Unknown project operation");
-    return operations[method](...args);
-  }).then((result) => send({ id, result }), (error) => send({ id, error: errorValue(error) }));
+    return controller ? checkout(args[0], args[1], controller.signal) : operations[method](...args);
+  }).then((result) => send({ id, result }), (error) => send({ id, error: errorValue(error) })).finally(() => checkouts.delete(id));
 });
 input.on("close", () => {
+  for (const controller of checkouts.values())
+    controller.abort(Error("Project process closed"));
   for (const watcher of watchers.values())
     watcher.close();
   watchers.clear();
-  process.exit();
 });
