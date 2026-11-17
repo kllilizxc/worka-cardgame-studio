@@ -26,23 +26,13 @@ __export(exports_actions, {
   catalog: () => catalog,
   changed: () => changed,
   check: () => check,
-  feedbackHistory: () => feedbackHistory,
-  feedbackReport: () => feedbackReport,
-  feedbackReported: () => feedbackReported,
   forget: () => forget,
-  gameCover: () => gameCover,
-  gameInstallation: () => gameInstallation,
   lan: () => lan,
   note: () => note,
-  outbox: () => outbox,
-  playGame: () => playGame,
   receive: () => receive,
-  recordFeedback: () => recordFeedback,
   refresh: () => refresh,
-  refreshFeedback: () => refreshFeedback,
   rename: () => rename,
   report: () => report,
-  requestRepair: () => requestRepair,
   restore: () => restore,
   start: () => start,
   stop: () => stop,
@@ -6374,7 +6364,19 @@ function operation(kind, definition, handler) {
     assertJson(result.data);
     return result.data;
   };
-  const captured = Object.freeze({ ...definition, kind, input: inputSchema, output: outputSchema, execute });
+  if (definition.idempotent === true && definition.receipt !== undefined && definition.receipt !== "idempotent")
+    throw new Error("idempotent: true conflicts with a non-idempotent receipt declaration");
+  if (definition.idempotent === false && definition.receipt === "idempotent")
+    throw new Error('idempotent: false conflicts with receipt: "idempotent"');
+  const normalizedReceipt = definition.idempotent === true ? "idempotent" : definition.receipt;
+  const captured = Object.freeze({
+    ...definition,
+    ...normalizedReceipt !== undefined ? { receipt: normalizedReceipt } : {},
+    kind,
+    input: inputSchema,
+    output: outputSchema,
+    execute
+  });
   const reference = { kind };
   Object.defineProperty(reference, definitionKey, { value: captured });
   return Object.freeze(reference);
@@ -6539,7 +6541,129 @@ function collectionAccess(note, raw, writable) {
       throw new Error("Incomplete collection read. Use ctx.db.page and follow its cursor to read the complete result.");
     return result.items;
   };
-  const read = { get, page, list };
+  const find = async (name, options = {}) => {
+    const def = declared(name);
+    const allowedKeys = new Set(["where", "search", "sort", "select", "limit", "scanLimit"]);
+    if (Object.keys(options).some((k) => !allowedKeys.has(k)))
+      throw new Error("Unknown find option");
+    const limitRaw = typeof options.limit === "number" && Number.isFinite(options.limit) ? Math.floor(options.limit) : 200;
+    const limit = Math.max(1, Math.min(500, limitRaw));
+    const scanRaw = typeof options.scanLimit === "number" && Number.isFinite(options.scanLimit) ? Math.floor(options.scanLimit) : 600;
+    const scanLimit = Math.max(limit, Math.min(2000, scanRaw));
+    const rawWhere = options.where ?? {};
+    const pushdownWhere = {};
+    const inMemorySets = [];
+    for (const [field, val] of Object.entries(rawWhere)) {
+      if (!Object.hasOwn(def.schema.shape, field) && field !== "id")
+        throw new Error(`Unknown filter field: ${field}`);
+      if (Array.isArray(val)) {
+        inMemorySets.push([field, new Set(val)]);
+      } else if (val === null || ["string", "number", "boolean"].includes(typeof val)) {
+        pushdownWhere[field] = val;
+      } else if (val !== undefined) {
+        throw new Error("Find filters support scalar equality or scalar arrays");
+      }
+    }
+    const sortSpec = Array.isArray(options.sort) ? options.sort.map((s) => ({ field: s.field, direction: s.direction ?? "asc" })) : Object.entries(options.sort ?? {}).map(([field, direction]) => ({ field, direction }));
+    for (const s of sortSpec) {
+      if (!Object.hasOwn(def.schema.shape, s.field) || !["asc", "desc"].includes(s.direction)) {
+        throw new Error(`Invalid sort field or direction: ${s.field}`);
+      }
+    }
+    const searchObj = typeof options.search === "string" ? { query: options.search } : options.search;
+    const needle = searchObj?.query?.trim().toLocaleLowerCase() ?? "";
+    const searchFields = searchObj?.fields ? [...searchObj.fields] : undefined;
+    if (searchFields) {
+      for (const f of searchFields) {
+        if (!Object.hasOwn(def.schema.shape, f))
+          throw new Error(`Unknown search field: ${f}`);
+      }
+    }
+    const requestedSelect = Array.isArray(options.select) ? [...options.select] : undefined;
+    const neededExtra = new Set;
+    if (requestedSelect) {
+      for (const [f] of inMemorySets)
+        if (f !== "id" && !requestedSelect.includes(f))
+          neededExtra.add(f);
+      for (const s of sortSpec)
+        if (!requestedSelect.includes(s.field))
+          neededExtra.add(s.field);
+      if (needle) {
+        const candidates = searchFields ?? Object.keys(def.schema.shape);
+        for (const f of candidates)
+          if (!requestedSelect.includes(f))
+            neededExtra.add(f);
+      }
+    }
+    const pageSelect = requestedSelect ? [...requestedSelect, ...neededExtra] : undefined;
+    const pushdownOrder = sortSpec.length === 1 ? { [sortSpec[0].field]: sortSpec[0].direction } : undefined;
+    const scanned = [];
+    let cursor;
+    let revision = "0";
+    let hitScanCeiling = false;
+    do {
+      const batch = await page(name, {
+        ...Object.keys(pushdownWhere).length ? { where: pushdownWhere } : {},
+        ...pushdownOrder ? { orderBy: pushdownOrder } : {},
+        ...pageSelect ? { select: pageSelect } : {},
+        ...cursor ? { cursor } : {}
+      });
+      revision = batch.revision;
+      for (const row of batch.items) {
+        scanned.push(row);
+        if (scanned.length >= scanLimit) {
+          if (batch.next !== undefined)
+            hitScanCeiling = true;
+          break;
+        }
+      }
+      if (scanned.length >= scanLimit)
+        break;
+      cursor = batch.next;
+    } while (cursor);
+    let matched = scanned;
+    if (inMemorySets.length) {
+      matched = matched.filter((row) => inMemorySets.every(([field, allowed]) => allowed.has(row[field])));
+    }
+    if (needle) {
+      matched = matched.filter((row) => {
+        const keys = searchFields ?? Object.keys(row);
+        return keys.some((k) => typeof row[k] === "string" && row[k].toLocaleLowerCase().includes(needle));
+      });
+    }
+    if (sortSpec.length > 1) {
+      matched = [...matched].sort((a, b) => {
+        for (const { field, direction } of sortSpec) {
+          const av = a[field], bv = b[field];
+          if (av === bv)
+            continue;
+          if (av === undefined || av === null)
+            return 1;
+          if (bv === undefined || bv === null)
+            return -1;
+          const cmp = av < bv ? -1 : 1;
+          return direction === "desc" ? -cmp : cmp;
+        }
+        return 0;
+      });
+    }
+    const totalMatched = matched.length;
+    const sliced = matched.slice(0, limit).map((row) => {
+      if (!neededExtra.size || !requestedSelect)
+        return row;
+      const copy = { id: row.id };
+      for (const f of requestedSelect)
+        copy[f] = row[f];
+      return copy;
+    });
+    return freezeJson({
+      items: sliced,
+      totalMatched,
+      truncated: hitScanCeiling || totalMatched > limit,
+      revision
+    });
+  };
+  const read = { get, page, list, find };
   if (!writable)
     return Object.freeze(read);
   return Object.freeze({
@@ -6638,7 +6762,7 @@ function bindActionContext(note, raw) {
     return raw.invoke({ kind, name: target.name, input });
   };
   const action = raw;
-  const { agent, notifications, previews, extensions, quip, slack, subprocess } = action;
+  const { agent, notifications, previews, extensions, subprocess } = action;
   return Object.freeze({
     note: identity(raw),
     signal: raw.signal,
@@ -6656,7 +6780,18 @@ function bindActionContext(note, raw) {
       ...agent?.prepare ? { prepare: agent.prepare.bind(agent) } : {},
       ...agent?.stop ? { stop: agent.stop.bind(agent) } : {},
       result: (runId) => agent.result(runId, { wait: false })
-    }), notifications, previews, extensions, quip, slack, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    }), notifications, previews, extensions, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    decide: async (request) => {
+      assertJson(request);
+      if (!raw.decide) {
+        const answers = Object.fromEntries(request.items.map((item) => {
+          const first = typeof item.choices[0] === "string" ? item.choices[0] : item.choices[0].value;
+          return [item.id, { choice: item.fallback ?? first, confidence: 0 }];
+        }));
+        return { answers, backend: "degraded", degraded: true };
+      }
+      return raw.decide(request);
+    },
     jobs: Object.freeze({
       infer: (request, options) => {
         const onComplete = operationTarget(options.onComplete, note, ["mutation", "action"]);
@@ -6902,7 +7037,6 @@ var candidateInputSchema = object({
   surface: string2().optional()
 });
 var surfaceStatusSchema = looseObject({
-  feedbackSignature: object({ signature: string2(), reportId: string2() }).optional(),
   phase: _enum(["stopped", "queued", "preparing", "starting", "verifying", "ready", "failed", "stopping"]),
   url: string2().optional(),
   pass: string2(),
@@ -6911,20 +7045,7 @@ var surfaceStatusSchema = looseObject({
   message: string2().optional(),
   steps: array(object({ id: string2(), label: string2(), state: _enum(["pending", "running", "completed", "failed", "skipped"]), detail: string2().optional() })).optional(),
   verified: object({ ok: boolean2(), at: number2(), checks: array(object({ name: string2(), ok: boolean2(), detail: string2().optional(), fix: string2().optional(), evidence: string2().optional(), owner: _enum(["user", "project"]).optional() })) }).optional(),
-  failure: object({
-    message: string2(),
-    owner: _enum(["framework", "project", "user"]),
-    step: string2().optional(),
-    log: string2().optional(),
-    attempts: number2(),
-    handling: _enum(["coordinating", "delivery-failed", "retrying", "awaiting-approval", "agent-pending", "agent", "agent-unknown", "agent-done", "waiting-user", "exhausted"]).optional(),
-    handlingNote: string2().optional(),
-    retryAt: number2().optional(),
-    reportId: string2().optional(),
-    session: string2().optional(),
-    delegationId: string2().optional(),
-    at: number2()
-  }).optional(),
+  failure: looseObject({ message: string2(), owner: _enum(["framework", "project", "user"]), step: string2().optional(), log: string2().optional(), attempts: number2(), at: number2() }).optional(),
   source: string2().optional(),
   logDir: string2().optional()
 });
@@ -6932,42 +7053,13 @@ var candidateSchema = candidateInputSchema.omit({ start: true, surface: true }).
   receivedAt: number2(),
   desired: record(string2(), _enum(["running", "stopped"])).optional(),
   surfaces: array(looseObject({ name: string2(), title: string2().optional(), url: string2() })).optional(),
-  status: record(string2(), surfaceStatusSchema).optional(),
-  repair: object({ rounds: number2(), source: string2(), delegationId: string2().optional(), lastFailure: string2().optional() }).optional()
-});
-var feedbackSchema = looseObject({
-  deliveryBlocked: string2().optional(),
-  deliveryAttempt: number2().optional(),
-  attemptedAt: number2().optional(),
-  id: string2(),
-  delegationId: string2().optional(),
-  standalone: boolean2().optional(),
-  autoRepair: boolean2().optional(),
-  kind: literal("delivery-feedback"),
-  status: _enum(["passed", "failed", "unchecked"]),
-  subject: string2(),
-  summary: string2(),
-  userRequested: boolean2().optional(),
-  observedAt: number2().optional(),
-  source: string2().optional(),
-  originNoteId: string2().nullable().optional(),
-  candidateKey: string2(),
-  revision: string2(),
-  commits: array(string2()).optional(),
-  surface: string2(),
-  runId: string2(),
-  diagnostics: string2(),
-  repairable: string2().optional(),
-  title: string2().optional(),
-  project: string2().optional()
+  status: record(string2(), surfaceStatusSchema).optional()
 });
 var dataSchema = looseObject({
   title: string2(),
   candidates: array(candidateSchema),
   archivedCandidates: array(candidateSchema).optional(),
-  attached: array(string2()),
-  outbox: array(feedbackSchema).optional(),
-  feedbackError: string2().nullable().optional()
+  attached: array(string2())
 });
 var renameInputSchema = object({ key: string2().optional(), originNoteId: string2().optional(), delegationId: string2().optional(), title: string2() });
 var receiveInputSchema = union([
@@ -6984,16 +7076,6 @@ function rowState(row) {
   if (s.phase === "failed") {
     if (s.failure?.step === "verify")
       return "verificationFailed";
-    if (s.failure?.handling === "coordinating")
-      return "coordinating";
-    if (s.failure?.handling === "agent-pending")
-      return "repairPending";
-    if (s.failure?.handling === "agent-unknown")
-      return "repairUnknown";
-    if (s.failure?.handling === "retrying" || s.failure?.handling === "agent")
-      return "repairing";
-    if (s.failure?.handling === "waiting-user")
-      return "waiting";
     return "failed";
   }
   if (s.phase === "ready")
@@ -7009,24 +7091,16 @@ function rowState(row) {
 
 // model.ts
 var configSchema = object({
-  connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional(),
-  gameRoot: string2().optional(),
-  gameCommit: string2().regex(/^[a-f0-9]{40}$/).optional(),
-  adapter: string2().optional(),
-  coverAsset: string2().optional(),
   previewDesk: object({ home: string2(), cli: string2() }).optional(),
-  feedbackInTodo: boolean2().optional(),
-  projectId: string2().optional(),
   notes: object({ todo: string2().optional(), execution: string2().optional() }).optional()
 });
 var note = defineNote({
+  records: ["candidates", "archivedCandidates"].map((collection) => ({ collection, id: "/id", route: { path: "/candidates/:candidateId", param: "candidateId" }, label: "/title", links: [{ noteId: "/originNoteId", recordId: "/delegationId" }], identities: [{ namespace: "feature", value: "/featureId" }] })),
   config: { schema: configSchema, defaults: {} },
   collections: {
     candidates: { schema: candidateSchema.extend({ view: candidateSchema }), indexes: [["receivedAt"], ["originNoteId", "delegationId"], ["featureId"]] },
     archivedCandidates: { schema: candidateSchema.extend({ view: candidateSchema }), indexes: [["receivedAt"], ["originNoteId", "delegationId"], ["featureId"]] },
-    outbox: { schema: feedbackSchema.omit({ id: true }), indexes: [["candidateKey"], ["observedAt"]] },
-    feedbackHistory: { schema: object({ report: feedbackSchema, observedAt: number2(), userRequested: boolean2() }), indexes: [["observedAt"]] },
-    metadata: { schema: object({ title: string2(), attached: array(string2()), feedbackError: string2().nullable() }) }
+    metadata: { schema: looseObject({ title: string2(), attached: array(string2()) }) }
   },
   update: {
     dataVersion: "candidate-preview@2",
@@ -7045,28 +7119,8 @@ var note = defineNote({
   }
 });
 
-// document.ts
-function candidateSummary(candidate) {
-  const { options: _options, argv: _argv, ...summary } = candidate;
-  return { ...summary, ...candidate.status ? { status: Object.fromEntries(Object.entries(candidate.status).map(([name, status]) => {
-    const { failure, verified, steps, ...rest } = status;
-    const { log: _log, ...smallFailure } = failure ?? {};
-    return [name, {
-      ...rest,
-      ...failure ? { failure: smallFailure } : {},
-      ...verified ? { verified: { ...verified, checks: verified.checks.map(({ name, ok }) => ({ name, ok })) } } : {},
-      ...steps ? { steps: steps.map(({ id, label, state }) => ({ id, label, state })) } : {}
-    }];
-  })) } : {} };
-}
-function candidateDocument(candidate) {
-  const { view: _view, id: _id, ...value } = candidate;
-  return JSON.parse(JSON.stringify({ ...value, view: candidateSummary(value) }));
-}
-
 // actions.ts
-var changed = note.event({ visibility: "public", name: "candidates.changed", description: "候选登记、来源、标题、运行意图或移除发生变化；检查结果由反馈事件报告。", payload: object({ key: string2(), title: string2(), revision: string2(), removed: boolean2() }), objectRef: "/key", objectLabel: "/title", revision: "/revision" });
-var feedbackReported = note.event({ visibility: "public", name: "candidates.feedbackReported", description: "候选检查的明确结果或用户授权修复请求，需要与原任务核对。", payload: feedbackSchema.extend({ originNoteId: string2().nullable() }), objectRef: "/candidateKey", objectLabel: "/title", revision: "/runId" });
+var changed = note.event({ visibility: "public", name: "candidates.changed", description: "候选登记、来源、标题、运行意图或移除发生变化；检查结果与日志由运行器记录。", payload: object({ key: string2(), title: string2(), revision: string2(), removed: boolean2() }), objectRef: "/key", objectLabel: "/title", revision: "/revision" });
 async function command(name, input, ctx) {
   if (!ctx.host.previews.command)
     throw Error("请更新宿主以启用持久预览运行器");
@@ -7110,48 +7164,6 @@ var forget = note.action({ description: "删除已归档候选的登记记录。
 });
 var refresh = note.action({ description: "恢复预览宿主观察。", visibility: "private", input: object({}), output: looseObject({ accepted: boolean2().optional(), count: number2().optional() }) }, (ctx) => command("refresh", {}, ctx));
 var triggers = note.triggers([{ id: "preview-install", on: { type: "install" }, run: refresh, input: {} }]);
-var requestRepair = note.action({ description: "重新投递当前故障给连线；沿用原报告，不创建另一轮修复任务。", visibility: "private", input: object({ key: string2(), surface: string2().optional() }), output: looseObject({ accepted: boolean2(), session: string2().optional(), reason: string2().optional() }) }, async (ctx, input) => {
-  return command("requestRepair", input, ctx);
-});
-var refreshFeedback = note.action({ description: "重试投递候选的待处理反馈。", visibility: "private", input: object({ key: string2() }), output: looseObject({ checked: boolean2() }) }, async (ctx, input) => {
-  return command("refreshFeedback", input, ctx);
-});
-var recordFeedback = note.mutation({ visibility: "public", description: "核对候选失败轮次后保存原任务的修复处理状态。", receipt: "queryable", input: object({ key: string2(), surface: string2(), runId: string2(), reportId: string2(), handling: string2(), summary: string2().optional(), delegationId: string2().optional(), sessionId: string2().optional() }), output: looseObject({ stored: boolean2(), key: string2(), runId: string2(), duplicate: boolean2().optional() }) }, async (ctx, input) => {
-  if (!input?.key?.trim() || !input.runId?.trim() || !input.reportId?.trim())
-    throw Error("需要候选和失败轮次");
-  const handling = { coordinating: "coordinating", unreceived: "agent-unknown", superseded: "coordinating", queued: "agent", running: "agent", paused: "waiting-user", "needs-input": "waiting-user", completed: "agent-done" };
-  const nextHandling = handling[input.handling];
-  if (!nextHandling)
-    throw Error("未知反馈处理状态");
-  const candidate2 = await ctx.db.get("candidates", input.key);
-  const surface = candidate2?.status?.[input.surface];
-  if (!candidate2 || !surface?.failure || surface.pass !== input.runId)
-    throw Error("候选失败轮次已变化，请重新核对");
-  if (surface.failure.reportId !== input.reportId)
-    return { stored: false, key: input.key, runId: input.runId };
-  const withReceipt = (failure) => ({
-    ...failure,
-    handling: nextHandling,
-    handlingNote: input.handling === "queued" ? "原任务已接收修复请求，正在排队" : input.handling === "running" ? "原任务正在处理修复" : input.summary?.trim().slice(0, 300) || failure.handlingNote,
-    reportId: input.reportId,
-    ...input.sessionId ? { session: input.sessionId } : {},
-    ...input.delegationId ? { delegationId: input.delegationId } : {}
-  });
-  const updated = { ...candidate2, status: Object.fromEntries(Object.entries(candidate2.status ?? {}).map(([name, entry]) => [
-    name,
-    entry.pass === input.runId && entry.phase === "failed" && entry.failure ? { ...entry, failure: withReceipt(entry.failure) } : entry
-  ])) };
-  const acknowledged = input.handling !== "unreceived" && (!["queued", "running"].includes(input.handling) || Boolean(input.sessionId));
-  const pending = acknowledged ? await ctx.db.get("outbox", input.reportId) : null;
-  if (JSON.stringify(updated.status) === JSON.stringify(candidate2.status) && !pending)
-    return { stored: true, key: input.key, runId: input.runId, duplicate: true };
-  await ctx.db.put("candidates", input.key, candidateDocument(updated));
-  if (pending)
-    await ctx.db.delete("outbox", input.reportId);
-  if (input.handling === "completed")
-    await ctx.scheduler.runAfter(0, refresh, {});
-  return { stored: true, key: input.key, runId: input.runId };
-});
 var rename = note.action({ visibility: "public", description: "按原任务或候选 key 更新显示名称，不影响预览运行状态。", receipt: "queryable", input: renameInputSchema, output: looseObject({ renamed: number2() }) }, (ctx, input) => renameCandidates(ctx, input));
 async function renameCandidates(ctx, input) {
   const title = input.title.trim();
@@ -7165,19 +7177,12 @@ async function renameCandidates(ctx, input) {
 var pageInput2 = object({ cursor: string2().optional() });
 var candidatePageSchema = object({ items: array(candidateSchema), revision: string2(), next: string2().optional() });
 var catalogFields = ["key", "title", "repos", "cwd", "revision", "receivedAt", "surfaces"];
-var feedbackFields = ["candidateKey", "subject", "summary", "status", "deliveryBlocked", "title"];
 var catalog = note.query({
   visibility: "public",
   description: "分页列出未归档预览的身份、代码版本和入口。",
   input: pageInput2,
   output: note.collections.candidates.pageSchema(catalogFields)
 }, (ctx, input) => ctx.db.page("candidates", { ...input, select: catalogFields }));
-var feedbackHistory = note.query({
-  visibility: "public",
-  description: "分页读取每次预览检查的完整原始结果。",
-  input: pageInput2,
-  output: note.collections.feedbackHistory.pageSchema()
-}, (ctx, input) => ctx.db.page("feedbackHistory", { ...input, orderBy: { observedAt: "desc" } }));
 var candidate = note.query({
   visibility: "public",
   description: "按稳定候选 key 读取配置、检查和运行结果。",
@@ -7192,19 +7197,13 @@ var candidate = note.query({
   const { id: _id, view: _view, ...candidate2 } = row;
   return { candidate: candidate2, revision: sha256(JSON.stringify(candidate2)) };
 });
-var summary = note.query({ visibility: "private", description: "读取看板标题和反馈状态。", input: object({}), output: object({ title: string2(), feedbackError: string2().nullable() }) }, async (ctx) => {
+var summary = note.query({ visibility: "private", description: "读取看板标题。", input: object({}), output: object({ title: string2() }) }, async (ctx) => {
   const metadata = await ctx.db.get("metadata", "root");
-  return { title: metadata?.title ?? "", feedbackError: metadata?.feedbackError ?? null };
+  return { title: metadata?.title ?? "" };
 });
 var candidates = note.query({ visibility: "private", description: "分页读取候选列表摘要。", input: pageInput2, output: candidatePageSchema }, async (ctx, input) => {
-  let cursor = input.cursor;
-  for (;; ) {
-    const page = await ctx.db.page("candidates", { cursor, orderBy: { receivedAt: "desc" }, select: ["view"] });
-    const items = page.items.map((row) => row.view).filter((row) => !row.key.startsWith("studio-entry-"));
-    if (items.length || !page.next)
-      return { ...page, items };
-    cursor = page.next;
-  }
+  const page = await ctx.db.page("candidates", { ...input, orderBy: { receivedAt: "desc" }, select: ["view"] });
+  return { ...page, items: page.items.map((row) => row.view) };
 });
 var archivedCandidates = note.query({ visibility: "private", description: "分页读取已归档候选摘要。", input: pageInput2, output: candidatePageSchema }, async (ctx, input) => {
   const page = await ctx.db.page("archivedCandidates", { ...input, orderBy: { receivedAt: "desc" }, select: ["view"] });
@@ -7215,74 +7214,12 @@ var candidateDetail = note.query({ visibility: "private", description: "按稳�
     return null;
   return (await ctx.db.page("candidates", { where: { id: input.key }, select: ["view"] })).items[0]?.view ?? null;
 });
-var outbox = note.query({ visibility: "private", description: "分页读取待投递报告摘要。", input: pageInput2, output: note.collections.outbox.pageSchema(feedbackFields) }, (ctx, input) => ctx.db.page("outbox", { ...input, select: feedbackFields }));
 var report = note.query({ visibility: "private", description: "打开候选后读取完整日志、核验和步骤。", input: object({ key: string2(), surface: string2().optional() }), output: unknown() }, async (ctx, input) => {
   const candidate2 = await ctx.db.get("candidates", input.key) ?? await ctx.db.get("archivedCandidates", input.key);
   if (!candidate2)
     return null;
   const status = input.surface === undefined ? Object.values(candidate2.status ?? {}) : [candidate2.status?.[input.surface]];
   return status.filter(Boolean).map((entry) => ({ log: entry?.failure?.log ?? null, checks: entry?.verified?.checks ?? [], steps: entry?.steps ?? [] }));
-});
-var feedbackReport = note.query({ visibility: "private", description: "打开一条完整反馈报告。", input: object({ id: string2() }), output: feedbackSchema.nullable() }, async (ctx, input) => {
-  const pending = await ctx.db.get("outbox", input.id);
-  if (pending)
-    return pending;
-  return (await ctx.db.get("feedbackHistory", input.id))?.report ?? null;
-});
-var gameEntry = object({ kind: _enum(["story", "map", "encounter"]), resourceId: string2().min(1), nodeId: string2().optional() });
-var installation = object({ adapter: string2().optional(), gameRoot: string2().optional(), gameCommit: string2().optional(), coverAsset: string2().optional() });
-var gameInstallation = note.query({ visibility: "private", description: "读取本机绑定的 CardGame 仓库与预览适配器。", output: installation }, readInstallation);
-async function readInstallation(ctx) {
-  const config = await ctx.config.read();
-  if (!config.connections?.game)
-    return installation.parse(config);
-  const snapshot = await ctx.resources.read({ name: "extension.game-project.index", connection: "game", input: {} });
-  if (snapshot.error)
-    throw Error(snapshot.error);
-  return installation.parse(snapshot.data ?? {});
-}
-var gameCover = note.query({ visibility: "private", description: "读取已连接游戏的背景素材。", output: string2().nullable() }, async (ctx) => {
-  const { coverAsset } = await readInstallation(ctx);
-  if (!coverAsset)
-    return null;
-  const snap = await ctx.resources.read({ name: "extension.game-project.asset", connection: "game", input: { id: coverAsset } });
-  if (snap.error)
-    throw Error(snap.error);
-  return snap.data ?? null;
-});
-var playGame = note.action({
-  visibility: "public",
-  description: "从绑定的真实 CardGame 仓库登记并运行一个完整提交，可指定剧情、秘境或战斗资源。无参数打开安装时的基线。",
-  input: object({ key: string2().min(1).optional(), commit: string2().regex(/^[0-9a-f]{40}$/).optional(), title: string2().optional(), entry: gameEntry.optional(), originNoteId: string2().optional(), delegationId: string2().optional() }),
-  output: looseObject({ candidate: object({ key: string2() }), accepted: boolean2() }),
-  objectRef: "/candidate/key",
-  receipt: "queryable"
-}, async (ctx, input) => {
-  const { adapter, gameRoot, gameCommit } = await ctx.runQuery(gameInstallation, {});
-  const commit = input.commit || gameCommit;
-  if (!adapter || !gameRoot || !commit)
-    throw Error("请在桌面对话中连接游戏仓库。");
-  const identity = input.entry ? [commit, input.entry.kind, input.entry.resourceId, input.entry.nodeId || ""] : null;
-  const key = input.key || input.delegationId || (identity ? "studio-entry-" + sha256(JSON.stringify(identity)).slice(0, 40) : "baseline-" + commit);
-  if (!input.key && !input.delegationId) {
-    const existing = await ctx.runQuery(candidate, { key });
-    if (existing) {
-      if (!Object.values(existing.candidate.desired || {}).includes("running"))
-        await command("start", { key }, ctx);
-      return { candidate: { key }, accepted: true };
-    }
-  }
-  return command("receive", {
-    key,
-    adapter,
-    repos: { game: { repo: gameRoot, commit } },
-    title: input.title || "CardGame · " + commit.slice(0, 7),
-    options: input.entry ? { entry: input.entry } : {},
-    ...input.originNoteId ? { originNoteId: input.originNoteId } : {},
-    ...input.delegationId ? { delegationId: input.delegationId } : {},
-    start: true,
-    embed: true
-  }, ctx);
 });
 
 var SAVED_IMAGE_LIMITS = Object.freeze({ bytes: 512 * 1024, totalBytes: 2 * 1024 * 1024, count: 8, dimension: 1600 });

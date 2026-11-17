@@ -2,30 +2,33 @@ import {useEffect,useRef,useState} from 'react';
 import {QueryState,useLinks,useLocation as useRecordLocation,useMutation,useNote} from '@dsh-workbench/react';
 import {noteHref} from '@dsh-workbench/runtime';
 import {Link,useLocation,useNavigate,useParams,useRoutes,useSearchParams} from 'react-router';
-import type {RecordRow} from './model';
-import {getMedia} from './media';
+import type {LiveLink,RecordRow} from './model';
 import {catalogKind,SymbolIcon,CategoryArt} from './visual';
 import './style.css';
 type Api=typeof import('./actions');
 const recordPath=(id:string)=>'records/'+encodeURIComponent(id).replace(/~/g,'%7E');
 function mediaType(path:string){return /\.(mp3|m4a|aac|flac|wav|ogg|opus|oga)$/i.test(path.split('?v=')[0])?'audio':'image';}
+function mergeLinks(live:readonly LiveLink[]=[],host:readonly {id:string;label:string;target:{noteId:string;recordId:string}}[]=[]):LiveLink[]{
+  const byTarget=new Map<string,LiveLink>();
+  for(const item of [...live,...host]){
+    const key=item.target.noteId+'\0'+item.target.recordId;
+    if(!byTarget.has(key))byTarget.set(key,{id:item.id,label:item.label,target:item.target});
+  }
+  return [...byTarget.values()];
+}
 function Artwork({file,link,title,large=false}:{file?:string|null;link?:string|null;title:string;large?:boolean}){
-  const note=useNote<Api>(),asset=note.useQuery('asset',{key:file||''},{enabled:!!file});
-  const [content,setContent]=useState<{file:string;uri:string|null}|null>(null);
+  const note=useNote<Api>(),asset=note.useQuery('asset',{key:file||''},{enabled:!!file&&(!mediaType(file).startsWith('audio')||large)});
   const audio=file&&mediaType(file)==='audio';
-  useEffect(()=>{
-    let live=true;
-    if(file&&(!audio||large))getMedia(file).then(uri=>{if(live)setContent({file,uri});}).catch(()=>{if(live)setContent({file,uri:null});});
-    return ()=>{live=false;};
-  },[file,audio,large]);
   if(audio&&!large)return <span className="cg-sound">♫</span>;
-  const src=asset.data||(file?(content?.file===file?content.uri||link:null):link);
+  const src=asset.data||link;
   if(!src)return null;
   return audio?<audio controls aria-label={title} preload="none" src={src}/>:<img loading="lazy" decoding="async" alt={large?title:''} src={src}/>;
 }
-function NativeLinks({id}:{id:string}){
+function NativeLinks({id,live}:{id:string;live?:readonly LiveLink[]}){
   const query=useLinks(id),run=useMutation(),{navigation}=useNote<Api>();
-  return <QueryState query={query}>{()=>query.links.length?<div className="cg-links">{query.links.map(l=><button key={l.id} onClick={()=>void run.run(()=>navigation.open(l.target))}>{l.label} ↗</button>)}{run.error&&<p role="alert">{run.error.message}</p>}</div>:null}</QueryState>;
+  const combined=mergeLinks(live,query.links);
+  if(!combined.length&&!query.error)return null;
+  return <div className="cg-links">{combined.map(l=><button key={l.id} onClick={()=>void run.run(()=>navigation.open(l.target))}>{l.label} ↗</button>)}{(run.error||query.error)&&<p role="alert">{(run.error||query.error)?.message}</p>}</div>;
 }
 function RoomGraph({rooms}:{rooms:NonNullable<RecordRow['diagram']>}){
   const {metadata}=useNote<Api>(),navigate=useNavigate(),{search}=useLocation();
@@ -65,11 +68,11 @@ function Detail(){
       const active=s.title===section&&i===lineIndex;
       return <li key={i} ref={active?highlighted:undefined} aria-current={active?'location':undefined}>{eventText(s.title,line)}</li>;
     })}</ul></section>)}
-    <NativeLinks id={id}/><details><summary>来源</summary><code>{record.source}</code>{record.mediaUrl&&<p><a href={record.mediaUrl} target="_blank" rel="noreferrer">打开原始素材 ↗</a></p>}</details>
-  </article>:<p>这条记录已不在当前游戏索引中。</p>}</QueryState></main>;
+    <NativeLinks id={id} live={record.links}/><details><summary>来源</summary><code>{record.source}</code>{record.mediaUrl&&<p><a href={record.mediaUrl} target="_blank" rel="noreferrer">打开原始素材 ↗</a></p>}</details>
+  </article>:<p>这条记录不在当前游戏文件中。</p>}</QueryState></main>;
 }
 function Collection(){
-  const {useQuery,metadata,config}=useNote<Api>(),[params,setParams]=useSearchParams();
+  const {useQuery,metadata,config,host}=useNote<Api>(),[params,setParams]=useSearchParams(),setup=useMutation();
   const kind=catalogKind(config.kind,metadata.name);
   const q=params.get('q')||'',sort=params.get('sort')==='name'?'name':'default',page=Math.max(1,parseInt(params.get('p')||'1')||1),isList=params.get('view')==='list';
   const filters:Record<string,string[]>={};
@@ -88,6 +91,7 @@ function Collection(){
       <div className="cg-switch"><button aria-label="网格" title="网格" aria-pressed={!isList} onClick={()=>edit(p=>p.delete('view'),false)}><SymbolIcon name="grid"/></button><button aria-label="列表" title="列表" aria-pressed={isList} onClick={()=>edit(p=>p.set('view','list'),false)}><SymbolIcon name="list"/></button></div></div>
     </div>
     <QueryState query={query}>{data=>{
+      if(!data.configured)return <p>连接游戏仓库后即可浏览与编辑{metadata.name}。<button type="button" onClick={()=>void setup.run(()=>host.openSetup())}>连接游戏仓库</button></p>;
       const primary=data.facets[0],filtered=Object.keys(filters).length>0;
       return <>
       {primary&&primary.options.length>1&&<div className="cg-quick" aria-label={primary.key}>
@@ -107,7 +111,7 @@ function Collection(){
       {data.pages>1&&<nav className="cg-pages"><button disabled={data.page<=1} onClick={()=>edit(p=>p.set('p',String(data.page-1)),false)}>上一页</button>
         <label>第 <input key={data.page} type="number" min={1} max={data.pages} defaultValue={data.page} aria-label="跳到页码" onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur();}} onBlur={e=>{const n=Math.max(1,Math.min(Number(e.target.value)||1,data.pages));edit(p=>p.set('p',String(n)),false);}}/> / {data.pages} 页</label>
         <button disabled={data.page>=data.pages} onClick={()=>edit(p=>p.set('p',String(data.page+1)),false)}>下一页</button></nav>}
-    </>;}}</QueryState></main>;
+    </>;}}</QueryState>{setup.error&&<p role="alert">{setup.error.message}</p>}</main>;
 }
 export default function Expanded(){
   const {metadata}=useNote<Api>(),location=useRecordLocation(),navigate=useNavigate(),handled=useRef('');

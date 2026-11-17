@@ -25,7 +25,7 @@ export function validateCandidateIdentity(input: Partial<Pick<CandidateInput, 'k
 }
 
 /** One row per surface, exactly as the host reported it. */
-type RowStatus = Pick<SurfaceStatus,'phase'|'url'|'pass'|'since'|'updatedAt'> & {verified?:{ok:boolean};failure?:Pick<NonNullable<SurfaceStatus['failure']>,'step'|'handling'>};
+type RowStatus = Pick<SurfaceStatus,'phase'|'url'|'pass'|'since'|'updatedAt'> & {verified?:{ok:boolean};failure?:Pick<NonNullable<SurfaceStatus['failure']>,'step'>};
 type RowCandidate = Pick<CandidateSpec,'key'|'title'|'surfaces'|'desired'> & {status?:Record<string,RowStatus>};
 export type PreviewRow<C extends RowCandidate=CandidateSpec> = { candidate: C; surface: string; name: string; url?: string; status?: NonNullable<C['status']>[string]; desired: NonNullable<CandidateSpec['desired']>[string] };
 
@@ -42,17 +42,12 @@ export function previewRows<C extends RowCandidate>(data:{candidates:C[]}):Previ
 }
 
 /** Stable display state derived only from host status. */
-export function rowState<C extends RowCandidate>(row:PreviewRow<C>):'stopped'|'starting'|'checking'|'ready'|'unchecked'|'verificationFailed'|'failed'|'stopping'|'repairing'|'coordinating'|'repairPending'|'repairUnknown'|'waiting'{
+export function rowState<C extends RowCandidate>(row:PreviewRow<C>):'stopped'|'starting'|'checking'|'ready'|'unchecked'|'verificationFailed'|'failed'|'stopping'{
   const s=row.status;
   if(!s)return row.desired==='running'?'starting':'stopped';
   if(s.phase==='failed'){
     // A failed project check leaves the page running and viewable while it is repaired.
     if(s.failure?.step==='verify')return 'verificationFailed';
-    if(s.failure?.handling==='coordinating')return 'coordinating';
-    if(s.failure?.handling==='agent-pending')return 'repairPending';
-    if(s.failure?.handling==='agent-unknown')return 'repairUnknown';
-    if(s.failure?.handling==='retrying'||s.failure?.handling==='agent')return 'repairing';
-    if(s.failure?.handling==='waiting-user')return 'waiting';
     return 'failed';
   }
   if(s.phase==='ready')return s.verified===undefined?'unchecked':s.verified.ok?'ready':'verificationFailed';

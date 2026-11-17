@@ -40,20 +40,17 @@ test('a shop price appears only for the featured item’s actual offer',()=>{
   assert.deepEqual(homeRecords('shop',[item,unrelated,offer]).records.map(r=>r.id),[item.id,offer.id]);
 });
 
-test('the importable desktop has real records and no seeded example work', async()=>{
+test('the importable desktop carries no embedded index and declares 11 notes with 5 enabled connections', async()=>{
   const {readFile,access}=await import('node:fs/promises');
   const root=new URL('../',import.meta.url);
   const manifest=JSON.parse(await readFile(new URL('desktop.json',root),'utf8'));
   await Promise.all(manifest.sourceFiles.map(file=>access(new URL(file,root))));
-  const notes=Object.fromEntries(manifest.notes.map(n=>[n.key,n.initialConfig]));
-  assert(!notes.ideas?.includeExampleWork && !notes.todo?.includeExampleWork);
-  for(const key of ['cards','map','encounter','monsters','people','shop','media']) {
-    assert(notes[key].records.length>0);
-    assert(notes[key].records.every(row=>!row.source.startsWith('examples/')));
+  assert.equal(manifest.notes.length,11);
+  assert.equal(manifest.relations.length,5);
+  assert(manifest.relations.every(rel=>rel.enabled===true&&rel.links===undefined));
+  for(const note of manifest.notes){
+    assert.equal(note.initialConfig?.records,undefined);
+    assert.equal(note.initialConfig?.storyIndex,undefined);
+    assert.equal(note.initialConfig?.includeExampleWork,undefined);
   }
-  assert(notes.story.storyIndex.every(scene=>!scene.path.startsWith('examples/')));
-  const [deck,...cards]=homeRecords('cards',notes.cards.records).records;
-  assert.equal(deck.group,'牌组');
-  const fullDeck=notes.cards.records.find(row=>row.id===deck.id);
-  assert(cards.every(card=>fullDeck.refs.some(ref=>ref.note==='cards'&&ref.id===card.id)));
 });

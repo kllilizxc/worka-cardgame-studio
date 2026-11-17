@@ -1,6 +1,6 @@
 import { validateSchedule } from './schedule';
-import { sha256 } from '@dsh-workbench/runtime';
-import type { NoteMutationContext, NoteQueryContext } from '@dsh-workbench/runtime';
+import { sha256 } from '@realiz3r/worka-runtime';
+import type { NoteMutationContext, NoteQueryContext } from '@realiz3r/worka-runtime';
 import { note, normalizeStatus, type TodoItem } from './model';
 import { todoListItem } from './list';
 import { changed } from './contracts';
@@ -15,18 +15,22 @@ export function importKey(item: Pick<TodoItem, 'title' | 'source'>): string | nu
 }
 /** Fractional lexical ranks permit insertion without rewriting an entire lane. */
 export function between(a = '', b?: string): string {
-  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  const alphabet = '!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
   if (b !== undefined && a >= b) throw new Error('Invalid task order');
   let prefix = '';
-  for (let i = 0; i < 128; i++) {
+  for (let i = 0; ; i++) {
     const low = i < a.length ? alphabet.indexOf(a[i]!) : 0;
-    const high = b !== undefined && i < b.length ? alphabet.indexOf(b[i]!) : 61;
+    const high = b !== undefined && i < b.length ? alphabet.indexOf(b[i]!) : alphabet.length - 1;
     if (low < 0 || high < 0) throw new Error('Invalid task position');
     if (high - low > 1) return prefix + alphabet[Math.floor((low + high) / 2)];
     prefix += alphabet[low];
     if (low < high) b = undefined;
   }
-  throw new Error('Task order exceeds the supported precision');
+}
+// A new revision sorts before every earlier revision and every legacy digit rank.
+// Only explicit insertions between neighbours need fractional ranks.
+function frontPosition(revision: number): string {
+  return `!${(Number.MAX_SAFE_INTEGER - revision).toString().padStart(16, '0')}`;
 }
 export function business(row: NonNullable<Awaited<ReturnType<ReadContext['db']['get']>>>): TodoItem {
   const { view: _view, position: _position, revision: _revision, normalizedTitle: _title, active: _active, ...item } = row as any;
@@ -39,6 +43,8 @@ export async function getItem(ctx: ReadContext, id: string) {
 }
 export async function saveItem(ctx: WriteContext, item: TodoItem | null, id: string, position?: string, publish = true) {
   const previous = id ? await ctx.db.get('items', id) : null;
+  // A stale remedy must never remain actionable after the blocker is cleared.
+  if (item && normalizeStatus(item) !== 'blocking' && item.unblockAction) { item = {...item}; delete item.unblockAction; }
   if (item && (item.startDate !== previous?.startDate || item.dueDate !== previous?.dueDate)) validateSchedule(item);
   const all = structuredClone(await ctx.db.get('totals', 'all') ?? emptyStats());
   if (!item && !previous) return String(all.revision);
@@ -46,8 +52,8 @@ export async function saveItem(ctx: WriteContext, item: TodoItem | null, id: str
   const {id:_projectedId,...projectedView}=projected??{};
   if (item && previous && [...new Set([...Object.keys(previous.view),...Object.keys(projectedView)])].every(key=>JSON.stringify((previous.view as any)[key])===JSON.stringify((projectedView as any)[key])) && JSON.stringify(business(previous ?? { id } as never)) === JSON.stringify(item) && (position === undefined || position === previous?.position)) return String(previous!.revision);
   // Real updates move to the front; explicit drag positions still take precedence.
-  const nextPosition = position ?? (item ? between('', all.firstPosition) : previous!.position);
   const nextRevision = all.revision + 1;
+  const nextPosition = position ?? (item ? frontPosition(nextRevision) : previous!.position);
   const adjust = (stats: Omit<ReturnType<typeof emptyStats>, 'firstPosition'> & { firstPosition?: string }, value: TodoItem, sign: number) => {
     if(value.archived)return;
     stats.total += sign; stats.counts[normalizeStatus(value)] += sign;
@@ -80,7 +86,7 @@ export async function saveItem(ctx: WriteContext, item: TodoItem | null, id: str
     for(const link of previous?.sessions??[])await ctx.db.delete('sessionIndex',JSON.stringify([link.taskId,id]));
   }
   if(nextImport)await ctx.db.put('imports',nextImport,{itemId:id});
-  if(publish)await changed.publish(ctx, { itemId: id, title: item?.title ?? previous!.title, revision: String(nextRevision) }, { key: `${id}:${nextRevision}` });
+  if(publish)await changed.publish(ctx, { itemId: id, title: item?.title ?? previous!.title, revision: String(nextRevision), ...((item ?? previous)?.workKind ? {workKind:(item ?? previous)!.workKind} : {}) }, { key: `${id}:${nextRevision}` });
   return String(nextRevision);
 }
 

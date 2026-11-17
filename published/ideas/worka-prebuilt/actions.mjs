@@ -19,9 +19,9 @@ __export(exports_actions, {
   cover: () => cover,
   findIdeas: () => findIdeas,
   idea: () => idea,
-  installExampleWork: () => installExampleWork,
   note: () => note,
-  remember: () => remember
+  remember: () => remember,
+  saved: () => saved
 });
 
 
@@ -1007,7 +1007,6 @@ function datetime(args) {
 var anyString = /^[\s\S]{0,}$/;
 var integer = /^-?\d+$/;
 var number = /^-?\d+(?:\.\d+)?$/;
-var boolean = /^(?:true|false)$/i;
 var _null = /^null$/i;
 var lowercase = /^[^A-Z]*$/;
 var uppercase = /^[^a-z]*$/;
@@ -1869,26 +1868,6 @@ var $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
 var $ZodNumberFormat = /* @__PURE__ */ $constructor("$ZodNumberFormat", (inst, def) => {
   $ZodCheckNumberFormat.init(inst, def);
   $ZodNumber.init(inst, def);
-});
-var $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.pattern = boolean;
-  inst._zod.parse = (payload, _ctx) => {
-    if (def.coerce)
-      try {
-        payload.value = Boolean(payload.value);
-      } catch (_) {}
-    const input = payload.value;
-    if (typeof input === "boolean")
-      return payload;
-    payload.issues.push({
-      expected: "boolean",
-      code: "invalid_type",
-      input,
-      inst
-    });
-    return payload;
-  };
 });
 var $ZodNull = /* @__PURE__ */ $constructor("$ZodNull", (inst, def) => {
   $ZodType.init(inst, def);
@@ -3478,12 +3457,6 @@ function _int(Class, params) {
     check: "number_format",
     abort: false,
     format: "safeint",
-    ...normalizeParams(params)
-  });
-}
-function _boolean(Class, params) {
-  return new Class({
-    type: "boolean",
     ...normalizeParams(params)
   });
 }
@@ -5523,14 +5496,6 @@ var ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def
 function int(params) {
   return _int(ZodNumberFormat, params);
 }
-var ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
-  $ZodBoolean.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json, params);
-});
-function boolean2(params) {
-  return _boolean(ZodBoolean, params);
-}
 var ZodNull = /* @__PURE__ */ $constructor("ZodNull", (inst, def) => {
   $ZodNull.init(inst, def);
   ZodType.init(inst, def);
@@ -6117,7 +6082,19 @@ function operation(kind, definition, handler) {
     assertJson(result.data);
     return result.data;
   };
-  const captured = Object.freeze({ ...definition, kind, input: inputSchema, output: outputSchema, execute });
+  if (definition.idempotent === true && definition.receipt !== undefined && definition.receipt !== "idempotent")
+    throw new Error("idempotent: true conflicts with a non-idempotent receipt declaration");
+  if (definition.idempotent === false && definition.receipt === "idempotent")
+    throw new Error('idempotent: false conflicts with receipt: "idempotent"');
+  const normalizedReceipt = definition.idempotent === true ? "idempotent" : definition.receipt;
+  const captured = Object.freeze({
+    ...definition,
+    ...normalizedReceipt !== undefined ? { receipt: normalizedReceipt } : {},
+    kind,
+    input: inputSchema,
+    output: outputSchema,
+    execute
+  });
   const reference = { kind };
   Object.defineProperty(reference, definitionKey, { value: captured });
   return Object.freeze(reference);
@@ -6282,7 +6259,129 @@ function collectionAccess(note, raw, writable) {
       throw new Error("Incomplete collection read. Use ctx.db.page and follow its cursor to read the complete result.");
     return result.items;
   };
-  const read = { get, page, list };
+  const find = async (name, options = {}) => {
+    const def = declared(name);
+    const allowedKeys = new Set(["where", "search", "sort", "select", "limit", "scanLimit"]);
+    if (Object.keys(options).some((k) => !allowedKeys.has(k)))
+      throw new Error("Unknown find option");
+    const limitRaw = typeof options.limit === "number" && Number.isFinite(options.limit) ? Math.floor(options.limit) : 200;
+    const limit = Math.max(1, Math.min(500, limitRaw));
+    const scanRaw = typeof options.scanLimit === "number" && Number.isFinite(options.scanLimit) ? Math.floor(options.scanLimit) : 600;
+    const scanLimit = Math.max(limit, Math.min(2000, scanRaw));
+    const rawWhere = options.where ?? {};
+    const pushdownWhere = {};
+    const inMemorySets = [];
+    for (const [field, val] of Object.entries(rawWhere)) {
+      if (!Object.hasOwn(def.schema.shape, field) && field !== "id")
+        throw new Error(`Unknown filter field: ${field}`);
+      if (Array.isArray(val)) {
+        inMemorySets.push([field, new Set(val)]);
+      } else if (val === null || ["string", "number", "boolean"].includes(typeof val)) {
+        pushdownWhere[field] = val;
+      } else if (val !== undefined) {
+        throw new Error("Find filters support scalar equality or scalar arrays");
+      }
+    }
+    const sortSpec = Array.isArray(options.sort) ? options.sort.map((s) => ({ field: s.field, direction: s.direction ?? "asc" })) : Object.entries(options.sort ?? {}).map(([field, direction]) => ({ field, direction }));
+    for (const s of sortSpec) {
+      if (!Object.hasOwn(def.schema.shape, s.field) || !["asc", "desc"].includes(s.direction)) {
+        throw new Error(`Invalid sort field or direction: ${s.field}`);
+      }
+    }
+    const searchObj = typeof options.search === "string" ? { query: options.search } : options.search;
+    const needle = searchObj?.query?.trim().toLocaleLowerCase() ?? "";
+    const searchFields = searchObj?.fields ? [...searchObj.fields] : undefined;
+    if (searchFields) {
+      for (const f of searchFields) {
+        if (!Object.hasOwn(def.schema.shape, f))
+          throw new Error(`Unknown search field: ${f}`);
+      }
+    }
+    const requestedSelect = Array.isArray(options.select) ? [...options.select] : undefined;
+    const neededExtra = new Set;
+    if (requestedSelect) {
+      for (const [f] of inMemorySets)
+        if (f !== "id" && !requestedSelect.includes(f))
+          neededExtra.add(f);
+      for (const s of sortSpec)
+        if (!requestedSelect.includes(s.field))
+          neededExtra.add(s.field);
+      if (needle) {
+        const candidates = searchFields ?? Object.keys(def.schema.shape);
+        for (const f of candidates)
+          if (!requestedSelect.includes(f))
+            neededExtra.add(f);
+      }
+    }
+    const pageSelect = requestedSelect ? [...requestedSelect, ...neededExtra] : undefined;
+    const pushdownOrder = sortSpec.length === 1 ? { [sortSpec[0].field]: sortSpec[0].direction } : undefined;
+    const scanned = [];
+    let cursor;
+    let revision = "0";
+    let hitScanCeiling = false;
+    do {
+      const batch = await page(name, {
+        ...Object.keys(pushdownWhere).length ? { where: pushdownWhere } : {},
+        ...pushdownOrder ? { orderBy: pushdownOrder } : {},
+        ...pageSelect ? { select: pageSelect } : {},
+        ...cursor ? { cursor } : {}
+      });
+      revision = batch.revision;
+      for (const row of batch.items) {
+        scanned.push(row);
+        if (scanned.length >= scanLimit) {
+          if (batch.next !== undefined)
+            hitScanCeiling = true;
+          break;
+        }
+      }
+      if (scanned.length >= scanLimit)
+        break;
+      cursor = batch.next;
+    } while (cursor);
+    let matched = scanned;
+    if (inMemorySets.length) {
+      matched = matched.filter((row) => inMemorySets.every(([field, allowed]) => allowed.has(row[field])));
+    }
+    if (needle) {
+      matched = matched.filter((row) => {
+        const keys = searchFields ?? Object.keys(row);
+        return keys.some((k) => typeof row[k] === "string" && row[k].toLocaleLowerCase().includes(needle));
+      });
+    }
+    if (sortSpec.length > 1) {
+      matched = [...matched].sort((a, b) => {
+        for (const { field, direction } of sortSpec) {
+          const av = a[field], bv = b[field];
+          if (av === bv)
+            continue;
+          if (av === undefined || av === null)
+            return 1;
+          if (bv === undefined || bv === null)
+            return -1;
+          const cmp = av < bv ? -1 : 1;
+          return direction === "desc" ? -cmp : cmp;
+        }
+        return 0;
+      });
+    }
+    const totalMatched = matched.length;
+    const sliced = matched.slice(0, limit).map((row) => {
+      if (!neededExtra.size || !requestedSelect)
+        return row;
+      const copy = { id: row.id };
+      for (const f of requestedSelect)
+        copy[f] = row[f];
+      return copy;
+    });
+    return freezeJson({
+      items: sliced,
+      totalMatched,
+      truncated: hitScanCeiling || totalMatched > limit,
+      revision
+    });
+  };
+  const read = { get, page, list, find };
   if (!writable)
     return Object.freeze(read);
   return Object.freeze({
@@ -6381,7 +6480,7 @@ function bindActionContext(note, raw) {
     return raw.invoke({ kind, name: target.name, input });
   };
   const action = raw;
-  const { agent, notifications, previews, extensions, quip, slack, subprocess } = action;
+  const { agent, notifications, previews, extensions, subprocess } = action;
   return Object.freeze({
     note: identity(raw),
     signal: raw.signal,
@@ -6399,7 +6498,18 @@ function bindActionContext(note, raw) {
       ...agent?.prepare ? { prepare: agent.prepare.bind(agent) } : {},
       ...agent?.stop ? { stop: agent.stop.bind(agent) } : {},
       result: (runId) => agent.result(runId, { wait: false })
-    }), notifications, previews, extensions, quip, slack, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    }), notifications, previews, extensions, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    decide: async (request) => {
+      assertJson(request);
+      if (!raw.decide) {
+        const answers = Object.fromEntries(request.items.map((item) => {
+          const first = typeof item.choices[0] === "string" ? item.choices[0] : item.choices[0].value;
+          return [item.id, { choice: item.fallback ?? first, confidence: 0 }];
+        }));
+        return { answers, backend: "degraded", degraded: true };
+      }
+      return raw.decide(request);
+    },
     jobs: Object.freeze({
       infer: (request, options) => {
         const onComplete = operationTarget(options.onComplete, note, ["mutation", "action"]);
@@ -6567,11 +6677,23 @@ var fields = {
   tags: array(string2().trim().min(1).max(80)).max(16)
 };
 var row = object({ ...fields, revision: number2().int(), updatedAt: number2() });
-var note = defineNote({ config: { schema: object({ includeExampleWork: boolean2().optional() }), defaults: {} }, collections: { ideas: { schema: row, indexes: [["updatedAt"], ["category", "updatedAt"]] } } });
+var note = defineNote({
+  records: [{ collection: "ideas", id: "/id", route: { path: "/ideas/:id", param: "id" }, label: "/title" }],
+  collections: { ideas: { schema: row, indexes: [["updatedAt"], ["category", "updatedAt"]] } }
+});
 
 // actions.ts
 var idSchema2 = string2().regex(/^[\w.-]{1,128}$/);
 var recordSchema = row.extend({ id: idSchema2 });
+var saved = note.event({
+  name: "ideas.saved",
+  visibility: "public",
+  description: "点子已存入或更新。",
+  payload: recordSchema,
+  objectRef: "/id",
+  objectLabel: "/title",
+  revision: "/revision"
+});
 var idea = note.query({ visibility: "public", description: "读取点子的原话、标题、分类与标签。", input: object({ id: idSchema2 }), output: recordSchema.nullable(), objectRef: "/id" }, (ctx, { id }) => ctx.db.get("ideas", id));
 var cover = note.query({ visibility: "private", input: object({}), output: object({ title: string2(), countLabel: string2(), items: array(object({ id: string2(), title: string2(), category: string2() })) }) }, async (ctx) => {
   const page = await ctx.db.page("ideas", { orderBy: { updatedAt: "desc" }, select: ["title", "category"] });
@@ -6599,7 +6721,7 @@ var findIdeas = note.query({
 });
 var remember = note.mutation({
   visibility: "public",
-  description: "按稳定 ID 记一条灵感，保留原话。更新时传已读 revision。",
+  description: "按稳定 ID 保存一条点子原话，并发布 ideas.saved 事件。更新已有记录时传 expectedRevision。",
   input: object({ id: idSchema2, ...fields, expectedRevision: number2().int().nonnegative().optional() }),
   output: recordSchema,
   objectRef: "/id"
@@ -6612,25 +6734,9 @@ var remember = note.mutation({
     throw Error("这条点子已有更新，请重新读取。");
   const next = { ...values, revision: (previous?.revision ?? 0) + 1, updatedAt: Date.now() };
   await ctx.db.put("ideas", id, next);
-  return { id, ...next };
-});
-var installExampleWork = note.mutation({ visibility: "private", output: _null3() }, async (ctx) => {
-  if (!(await ctx.config.read()).includeExampleWork)
-    return null;
-  if (!(await ctx.db.page("ideas", { select: [] })).items.length) {
-    const examples = [
-      ["idea-bell-exit", "让铃声暴露撤离点", "响铃的玩家能循声撤出，山里的敌人也会听见。", "探索机制", ["撤离", "铜铃", "雾林"]],
-      ["idea-rain-merchant", "雨夜的另一个商人", "雨落在空摊上时，另一个人来开店。", "商店", ["商人", "雨夜"]],
-      ["idea-herb-scent", "用草药气味引来妖兽", "把草药搓碎，能不能让潜藏的妖兽现身？", "探索机制", ["草药", "灵兽"]],
-      ["idea-failed-clue", "失败也能触发隐藏剧情", "第一次没能撤离时，让留在山中的物品变成下一章的线索。", "剧情", ["跨局", "线索"]]
-    ];
-    const timestamp = Date.parse("2026-10-31T02:30:00Z");
-    for (const [index, [id, title, text, category, tags]] of examples.entries()) {
-      await ctx.db.put("ideas", id, { title, text, category, tags: [...tags], revision: 1, updatedAt: timestamp - index });
-    }
-  }
-  await ctx.config.update({ includeExampleWork: false });
-  return null;
+  const record = { id, ...next };
+  await saved.publish(ctx, record, { key: `${id}:${next.revision}` });
+  return record;
 });
 
 var SAVED_IMAGE_LIMITS = Object.freeze({ bytes: 512 * 1024, totalBytes: 2 * 1024 * 1024, count: 8, dimension: 1600 });

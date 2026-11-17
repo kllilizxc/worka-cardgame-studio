@@ -1,4 +1,4 @@
-import { NoteIcon } from '@dsh-workbench/react';
+import { NoteIcon } from '@realiz3r/worka-react';
 import type { ComponentProps } from 'react';
 import type { TodoDisplaySource } from './list';
 export type LinkGroupItem = {

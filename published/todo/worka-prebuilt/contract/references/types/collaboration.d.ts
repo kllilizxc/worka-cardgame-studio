@@ -1,4 +1,4 @@
-import { z, type TaskOutcomeSource } from '@dsh-workbench/runtime';
+import { z, type TaskOutcomeSource } from '@realiz3r/worka-runtime';
 import { delegateTodoInputSchema, importItemInputSchema, importItemResultSchema, importItemsInputSchema, moveTodoInputSchema, todoItemSchema } from './contracts';
 import { type WriteContext } from './state';
 import type { TodoStatus } from './model';
@@ -15,13 +15,20 @@ declare const progressFeedbackInputSchema: z.ZodObject<{
     }>;
     conclusion: z.ZodString;
     expectedRevision: z.ZodOptional<z.ZodString>;
+    unblockAction: z.ZodOptional<z.ZodObject<{
+        label: z.ZodString;
+        target: z.ZodObject<{
+            noteId: z.ZodString;
+        }, z.core.$strip>;
+        request: z.ZodString;
+    }, z.core.$strip>>;
     summary: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export type FeedbackInput = z.infer<typeof progressFeedbackInputSchema>;
 export type MoveTodoInput = z.infer<typeof moveTodoInputSchema>;
 export declare function effectiveDelegatedStatus(task: TaskOutcomeSource): TodoStatus;
 export declare function todoItemPath(itemId: string): string;
-export declare const moveTodo: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const moveTodo: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     id: z.ZodString;
     status: z.ZodEnum<{
         blocking: "blocking";
@@ -43,7 +50,7 @@ export declare const moveTodo: import("@dsh-workbench/runtime").NoteOperation<z.
     index: z.ZodNumber;
     revision: z.ZodString;
 }, z.core.$strip>, "mutation">;
-export declare const commitEdit: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const commitEdit: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     title: z.ZodString;
     description: z.ZodString;
@@ -80,7 +87,7 @@ export declare const commitEdit: import("@dsh-workbench/runtime").NoteOperation<
     itemId: z.ZodString;
     revision: z.ZodString;
 }, z.core.$strip>, "mutation">;
-export declare const editTodo: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const editTodo: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     title: z.ZodString;
     description: z.ZodString;
@@ -113,7 +120,7 @@ export declare const editTodo: import("@dsh-workbench/runtime").NoteOperation<z.
     itemId: z.ZodString;
     revision: z.ZodString;
 }, z.core.$strip>, "action">;
-export declare const feedback: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const feedback: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     status: z.ZodEnum<{
         blocking: "blocking";
@@ -123,6 +130,13 @@ export declare const feedback: import("@dsh-workbench/runtime").NoteOperation<z.
     }>;
     conclusion: z.ZodString;
     expectedRevision: z.ZodOptional<z.ZodString>;
+    unblockAction: z.ZodOptional<z.ZodObject<{
+        label: z.ZodString;
+        target: z.ZodObject<{
+            noteId: z.ZodString;
+        }, z.core.$strip>;
+        request: z.ZodString;
+    }, z.core.$strip>>;
     summary: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, z.ZodObject<{
     itemId: z.ZodString;
@@ -141,6 +155,10 @@ declare const createTodoInputSchema: z.ZodObject<{
         high: "high";
         low: "low";
         medium: "medium";
+    }>>;
+    workKind: z.ZodOptional<z.ZodEnum<{
+        answer: "answer";
+        change: "change";
     }>>;
     category: z.ZodOptional<z.ZodString>;
     dueDate: z.ZodOptional<z.ZodString>;
@@ -181,7 +199,7 @@ export declare function importInTransaction(ctx: WriteContext, input: ImportItem
         error?: string | undefined;
     }[];
 }>;
-export declare const importItems: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const importItems: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
         title: z.ZodString;
         description: z.ZodOptional<z.ZodString>;
@@ -189,6 +207,10 @@ export declare const importItems: import("@dsh-workbench/runtime").NoteOperation
             high: "high";
             low: "low";
             medium: "medium";
+        }>>;
+        workKind: z.ZodOptional<z.ZodEnum<{
+            answer: "answer";
+            change: "change";
         }>>;
         category: z.ZodOptional<z.ZodString>;
         dueDate: z.ZodOptional<z.ZodString>;

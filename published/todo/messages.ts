@@ -1,8 +1,13 @@
-import {defineMessages, getLocale, selectMessages} from '@dsh-workbench/runtime';
+import { DEFAULT_CATEGORY } from './default-category';
+import {defineMessages, getLocale, selectMessages} from '@realiz3r/worka-runtime';
 import {cloneElement, isValidElement, type ReactNode} from 'react';
 
 /** Only authored interface copy. Persisted content keeps its original language. */
 export const english = {
+  "解除阻塞": "Unblock task",
+  "发送中…": "Sending…",
+  "已发送": "Sent",
+  "已发送，可在目标对话中查看进展。": "Sent. Follow progress in the destination conversation.",
   "新建任务": "New task",
   "待办视图": "Task view",
   "看板": "Board",
@@ -63,6 +68,8 @@ export const english = {
   "保存后，点击“{p0}”将新要求交给 AI。": "After saving, select “{p0}” to send your updated requirements to AI.",
   "查看待办：{p0}": "View task: {p0}",
   "打开对话：{p0}": "Open conversation: {p0}",
+  "打开正在运行的对话：{p0}": "Open running conversation: {p0}",
+  "运行中": "Running",
   "打开对话": "Open conversation",
   "详情": "Details",
   "关闭详情": "Close details",
@@ -80,13 +87,13 @@ export const english = {
   "本页没有匹配任务，请继续下一页。": "No matching tasks on this page. Continue to the next page.",
   "本页没有匹配任务。": "No matching tasks on this page.",
   "请在待办编辑器中完成或移除附件上传": "Reopen the task editor to finish or remove pending file uploads.",
-  "文件超过 4 MiB，请选择较小的文件": "File exceeds 4 MiB. Choose a smaller file.",
+  "文件超过 20 MiB，请选择较小的文件": "File exceeds 20 MiB. Choose a smaller file.",
   "每项任务最多添加 20 个文件附件": "Each task can have at most 20 file attachments.",
   "下载附件：{p0}": "Download attachment: {p0}",
   "移除附件：{p0}": "Remove attachment: {p0}",
-  "添加附件 · 每个最多 4 MiB": "Add files · up to 4 MiB each",
+  "添加附件 · 每个最多 20 MiB": "Add files · up to 20 MiB each",
   "添加附件": "Add files",
-  "每个最多 4 MiB · 最多 20 个": "Up to 4 MiB each · 20 files max",
+  "每个最多 20 MiB · 最多 20 个": "Up to 20 MiB each · 20 files max",
   "移除": "Remove",
   "上传失败": "Upload failed",
   "上传中…": "Uploading…",
@@ -218,3 +225,6 @@ export function ui(key: keyof typeof english, values: Record<string,string|numbe
   return selectMessages(messages, getLocale())[key].replace(/\{(p\d+)\}/g, (_, name) => String(values[name] ?? ''));
 }
 ui.rich = (key: keyof typeof english, values: Record<string,ReactNode> = {}) => selectMessages(messages,getLocale())[key].split(/(\{p\d+\})/g).map((part,index) => { if (!/^\{p\d+\}$/.test(part)) return part; const value = values[part.slice(1,-1)]; return isValidElement(value) ? cloneElement(value,{key:index}) : value; });
+
+/** Translate only the template-owned category, never user-authored labels. */
+export function categoryLabel(category: string) { return category === DEFAULT_CATEGORY ? ui('日常') : category; }

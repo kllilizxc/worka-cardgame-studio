@@ -13,7 +13,7 @@ export default {
       workaCandidate:ctx.key,workaCommit:game.commit,workaProfile:'studio'});
     return {
       surfaces:[{name:'game',title:'游戏',service:'game',path:'/?'+query}],
-      prepare:[{name:'安装游戏依赖',cwd:game.dir,command:['npm','ci','--no-audit','--no-fund'],unless:'node_modules/vite/dist/node/index.js',timeoutMs:300000}],
+      prepare:[{name:'安装游戏依赖',cwd:game.dir,command:['bun','install','--frozen-lockfile'],unless:'node_modules/vite/dist/node/index.js',timeoutMs:300000}],
       services:[{name:'game',cwd:game.dir,command:['node',join(folder,'serve.mjs')],env:{PORT:'{{port:game}}',STUDIO_COMMIT:game.commit,
         STUDIO_ENTRY:JSON.stringify(ctx.options.entry||null)},ready:{http:'/__worka_studio',timeoutMs:120000}}],
     };

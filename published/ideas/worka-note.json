@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "点子库",
-  "scenarios": "记下未定型的游戏创意，制作时寻找旧点子。",
+  "scenarios": "接收并保存游戏点子与灵感：模糊点子仅入库并一句话回复，具体点子通过连线自动转为制作待办并在新分支开工。",
   "icon": {
     "type": "svg",
     "path": "icon.svg",
@@ -38,7 +38,7 @@
     "worka-prebuilt/entry-bundle.tailwind.css",
     "worka-prebuilt/compact-wb1crzyy.css",
     "worka-prebuilt/expanded-az2cf2ns.css",
-    "worka-prebuilt/view-6dav07sd.js",
+    "worka-prebuilt/view-j12sarj0.js",
     "worka-prebuilt/actions.mjs",
     "worka-prebuilt/entry-bundle.css",
     "worka-prebuilt/expanded-6ej4d0ef.js",

@@ -1,4 +1,4 @@
-import {z,agentCompletionInput} from '@dsh-workbench/runtime';
+import {z,agentCompletionInput} from '@realiz3r/worka-runtime';
 import {note,todoStatusSchema} from './model';
 import {business,getItem,saveItem} from './state';
 import {saveSessionLink} from './sessions';
@@ -49,13 +49,13 @@ export const assignSession=note.action({visibility:'public',objectRef:'/itemId',
  const item=await ctx.runQuery(assignmentContext,{itemId});if(item.archived)throw Error('请先恢复这项待办再交办');
  const taskId=item.taskId??`todo-assignment:${ctx.note.id}:${itemId}`;
  if(!ctx.host.agent.prepare)throw Error('宿主没有提供会话分配能力');
- const {sessionId}=await ctx.host.agent.prepare(item.sessionId?{sessionId:item.sessionId,noteId:ctx.note.id}:{noteId:ctx.note.id,newSession:true,creationRequestId:taskId});
+ const {sessionId}=await ctx.host.agent.prepare(item.sessionId?{sessionId:item.sessionId,noteId:ctx.note.id}:{noteId:ctx.note.id,newSession:true,creationRequestId:taskId,initialTitle:item.title});
  const requestId=assignmentKey(itemId,item.fingerprint)+':'+ctx.idempotencyKey;
  const reservation=await ctx.runMutation(assignPreparedSession,{itemId,taskId,sessionId,title:item.title,requestId,fingerprint:item.fingerprint});
  if(!reservation.reserved){const {reserved,requestId:_requestId,...result}=reservation;return result;}
  let job;
  try{
-  job=await ctx.jobs.runAgent({sessionId,noteId:ctx.note.id,requestId,prompt:`用户已点击 Assign，立即处理这一项待办。\n便笺ID：${ctx.note.id}\n事项ID：${itemId}\n标题：${item.title}\n要求摘录：${(item.description??'').slice(0,6000)}\n本次交办需求版本：${item.fingerprint}。先用该便笺 requirement 查询（itemId 为上述事项ID）读取完整要求与附件，并核对返回 revision 等于该版本；若不一致，停止执行新草稿并报告需求已变化，不自行扩展本次交办。先查看关联点子库，结合制作连线提供的旧灵感向作者推荐；仅将已授权内容实施到游戏仓库。沿用真实身份与现有授权；有实际进展后通过 recordProgress 写回原事项，任务卡只能由用户确认完成；不得自行写 done，也不得调用状态切换或导入接口绕过。认为本次要求已完成时移到 blocking，并在进展中说明待用户 review。不得把本次模型回合结束等同于任务完成。`},{onComplete:assignmentCompleted});
+  job=await ctx.jobs.runAgent({sessionId,noteId:ctx.note.id,requestId,prompt:`这项待办已交办，请处理。\n便笺ID：${ctx.note.id}\n事项ID：${itemId}\n标题：${item.title}\n要求摘录：${(item.description??'').slice(0,6000)}\n本次交办需求版本：${item.fingerprint}。先用该便笺 requirement 查询（itemId 为上述事项ID）读取完整要求与附件，并核对返回 revision 等于该版本；若不一致，停止执行新草稿并报告需求已变化，不自行扩展本次交办。仅处理该事项，沿用真实身份与现有授权；有实际进展后用 workbench 的 action.invoke 写回原事项：设置 method 为 action.invoke，input 为 {noteId:${JSON.stringify(ctx.note.id)},action:"recordProgress",input:{itemId:${JSON.stringify(itemId)},status:实际状态,summary:简短进展,conclusion:实际结果}}；不要使用 note.action。开始执行时写入 in_progress；核实要求已完成且成果已保存后写入 done，在 conclusion 写入成果及可打开的便笺链接。用户只要求草稿时，保存可用草稿即写 done；未发送、待审阅或标明的合理占位不使草稿继续进行，除非用户实际要求后续行动或缺失事实使草稿不可交付。只有真正需要用户行动时才写 blocking；用户可重新打开任务。不得把本次模型回合结束等同于任务完成。若工具返回对外操作确认 proposal，立即结束本次尝试：在 recordProgress 写 blocking，并把 proposal.label、proposal.target 和 proposal.request 原样写入 unblockAction；不要修改参数、重试或自动发送。其他受阻且同桌某张便笺能采取明确下一步时，也可在 unblockAction 中给出按钮名、目标 noteId 和用户可审核的具体请求；不要自动发送。\n\n回答项目、术语或流程问题时，先从知识便笺的公开 resources 查询或已提供的上下文取得已登记入口和根目录，在登记根目录内用原生本地搜索和读取；未登记根目录的入口只读取该入口文件。不复制整个知识库。只有本地搜索没有命中时才查公开资料，并在回答中说明。给用户的最终回复先直接回答结果；通常一两句话即可。引用资料时，对实际查阅的相关项目入口或索引以及支持回答的实质资料分别给出路径和行号范围；资料位于 Git 仓库且可取得提交时给出 commit，存在相关未提交修改时说明。这些是可核对的依据，不是内部标识。实际受阻称「受阻」并说明原因和具体下一步。除非用户主动询问，不复述原始状态值、字段名、坐标、时区、内部标识或工具名。`},{onComplete:assignmentCompleted});
  }catch(error){await ctx.runMutation(assignmentDispatchUnknown,{itemId,requestId,error:error instanceof Error?error.message:String(error)});throw error;}
  return ctx.runMutation(commitAssignment,{itemId,requestId,jobId:job.id,reservedRevision:reservation.revision});
 });

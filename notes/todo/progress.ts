@@ -1,3 +1,6 @@
+import {sha256, type z} from '@realiz3r/worka-runtime';
+import type {unblockProposalSchema, TodoItem} from './model';
+
 export type ProgressStatus = 'todo' | 'in_progress' | 'blocking' | 'done';
 export type ProgressSource = 'recordProgress' | 'feedback' | 'current';
 export type ProgressEntry = {
@@ -79,4 +82,12 @@ export function projectProgressEntries(entries: readonly ProgressEntry[]): Progr
     if (ids.has(entry.id) || facts.has(fact)) return false;
     ids.add(entry.id); facts.add(fact); return true;
   }).sort((a, b) => (b.recordedAt ?? Infinity) - (a.recordedAt ?? Infinity) || a.id.localeCompare(b.id));
+}
+
+/** Preserve an existing receipt identity when the same blocker is recorded again. */
+export function unblockForProgress(item:TodoItem, proposal:z.infer<typeof unblockProposalSchema>|undefined, noteId:string, revision:string) {
+ if(!proposal)return undefined;
+ const previous=item.unblockAction;
+ if(previous && JSON.stringify([previous.label,previous.target.noteId,previous.request])===JSON.stringify([proposal.label,proposal.target.noteId,proposal.request]))return previous;
+ return {...proposal,requestId:'todo-unblock:'+sha256(JSON.stringify([noteId,item.id,revision,proposal]))};
 }

@@ -1,4 +1,4 @@
-import { z, type NoteFilesReader } from '@dsh-workbench/runtime';
+import { z, type NoteFilesReader } from '@realiz3r/worka-runtime';
 export declare const attachmentSchema: z.ZodObject<{
     id: z.ZodString;
     name: z.ZodString;

@@ -1,4 +1,4 @@
-import { type QueryStateSource } from '@dsh-workbench/react';
+import { type QueryStateSource } from '@realiz3r/worka-react';
 type PreviewTask = {
     id: string;
     label: string;
@@ -6,24 +6,21 @@ type PreviewTask = {
     status: 'pending' | 'running' | 'completed' | 'failed' | 'unknown' | 'skipped';
     error?: string;
 };
-import type { PreviewProgress } from '@dsh-workbench/runtime';
-import type { CandidateSpec, Feedback } from './model';
+import type { PreviewProgress } from '@realiz3r/worka-runtime';
+import type { CandidateSpec } from './model';
 export type CandidateSummary = CandidateSpec;
-export type FeedbackSummary = Pick<Feedback, 'id' | 'candidateKey' | 'subject' | 'summary' | 'status' | 'deliveryBlocked' | 'title'>;
 type DisplayCandidate = CandidateSpec | CandidateSummary;
 type DisplayStatus = NonNullable<DisplayCandidate['status']>[string];
 type DisplayData = {
     title: string;
     candidates: DisplayCandidate[];
     archivedCandidates?: DisplayCandidate[];
-    outbox?: Array<Feedback | FeedbackSummary>;
-    feedbackError?: string | null;
 };
 export declare const STATUS: Record<string, string>;
 export declare const TONE: Record<string, string>;
 export declare const TONE_BG: Record<string, string>;
 /** Matches the workbench shell so the note does not look like a foreign panel. */
-export declare const FONT = "var(--wb-font-family, -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", sans-serif)";
+export declare const FONT = "var(--font-family, -apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", sans-serif)";
 export declare const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
 export declare const DEVICES: readonly [{
     readonly key: 'desktop';
@@ -54,11 +51,6 @@ type Row = {
     logPath?: string;
     startedAt?: number;
     progress?: PreviewProgress;
-    feedback?: {
-        state: string;
-        summary?: string;
-        checkedAt?: number;
-    };
     surface?: string;
     spec: DisplayCandidate;
     owner: DisplayCandidate;
@@ -73,7 +65,6 @@ type Row = {
 };
 /** Rows render the host's status as-is; the view never infers process state. */
 export declare function previewRows(data: DisplayData, pending?: Record<string, PendingOperation>): Row[];
-export declare function feedbackLabel(state: string): string;
 export declare function canViewPreview(status: string): boolean;
 export declare function featureStatus(rows: Row[], operations?: Record<string, PendingOperation>): string;
 /** Compact lists show what is running or needs attention before stopped candidates. */
@@ -130,13 +121,14 @@ export declare function failureMessage(row: Row, error: string): {
 };
 /** Structured handoff keeps arbitrary candidate/surface names unambiguous. */
 export declare function previewFocus(key: string, surface?: string): string;
+export declare function previewEmbedKey(specKey: string, access: string): string;
 export declare function usePreviewModel(): {
     reportOpen: boolean;
     setReportOpen: (value: boolean) => void;
     copyLanAddress: () => Promise<void>;
     lanCopying: boolean;
     mutations: {
-        start: import("@dsh-workbench/react").Mutation<{
+        start: import("@realiz3r/worka-react").Mutation<{
             key: string;
             surface?: string | undefined;
             restart?: boolean | undefined;
@@ -145,24 +137,15 @@ export declare function usePreviewModel(): {
             accepted: boolean;
             key: string;
             desired: "running" | "stopped";
-        }>;
-        repair: import("@dsh-workbench/react").Mutation<{
+        }, unknown>;
+        verify: import("@realiz3r/worka-react").Mutation<{
             key: string;
             surface?: string | undefined;
         }, {
             [x: string]: unknown;
             accepted: boolean;
-            session?: string | undefined;
-            reason?: string | undefined;
-        }>;
-        verify: import("@dsh-workbench/react").Mutation<{
-            key: string;
-            surface?: string | undefined;
-        }, {
-            [x: string]: unknown;
-            accepted: boolean;
-        }>;
-        stop: import("@dsh-workbench/react").Mutation<{
+        }, unknown>;
+        stop: import("@realiz3r/worka-react").Mutation<{
             key: string;
             surface?: string | undefined;
         }, {
@@ -170,37 +153,37 @@ export declare function usePreviewModel(): {
             accepted: boolean;
             key: string;
             desired: "running" | "stopped";
-        }>;
-        check: import("@dsh-workbench/react").Mutation<{
+        }, unknown>;
+        check: import("@realiz3r/worka-react").Mutation<{
             key: string;
             surface?: string | undefined;
         }, {
             [x: string]: unknown;
             accepted: boolean;
-        }>;
-        archive: import("@dsh-workbench/react").Mutation<{
+        }, unknown>;
+        archive: import("@realiz3r/worka-react").Mutation<{
             key: string;
         }, {
             [x: string]: unknown;
             archived: boolean;
             key?: string | undefined;
             reason?: string | undefined;
-        }>;
-        restore: import("@dsh-workbench/react").Mutation<{
+        }, unknown>;
+        restore: import("@realiz3r/worka-react").Mutation<{
             key: string;
         }, {
             [x: string]: unknown;
             restored: boolean;
             key?: string | undefined;
             reason?: string | undefined;
-        }>;
-        forget: import("@dsh-workbench/react").Mutation<{
+        }, unknown>;
+        forget: import("@realiz3r/worka-react").Mutation<{
             key: string;
         }, {
             [x: string]: unknown;
             removed: boolean;
             reason?: string | undefined;
-        }>;
+        }, unknown>;
     };
     focusPending: boolean;
     focusLoading: boolean;
@@ -211,7 +194,7 @@ export declare function usePreviewModel(): {
     query: QueryStateSource<unknown>;
     queryLoading: boolean;
     queryError: Error | undefined;
-    page: import("@dsh-workbench/react").PagedQueryResult<{
+    page: import("@realiz3r/worka-react").PagedQueryResult<{
         [x: string]: unknown;
         key: string;
         title?: string | undefined;
@@ -240,10 +223,6 @@ export declare function usePreviewModel(): {
         }[] | undefined;
         status?: Record<string, {
             [x: string]: unknown;
-            feedbackSignature?: {
-                signature: string;
-                reportId: string;
-            } | undefined;
             phase: "failed" | "preparing" | "queued" | "ready" | "starting" | "stopped" | "stopping" | "verifying";
             url?: string | undefined;
             pass: string;
@@ -269,30 +248,19 @@ export declare function usePreviewModel(): {
                 }[];
             } | undefined;
             failure?: {
+                [x: string]: unknown;
                 message: string;
                 owner: "framework" | "project" | "user";
                 step?: string | undefined;
                 log?: string | undefined;
                 attempts: number;
-                handling?: "agent" | "agent-done" | "agent-pending" | "agent-unknown" | "awaiting-approval" | "coordinating" | "delivery-failed" | "exhausted" | "retrying" | "waiting-user" | undefined;
-                handlingNote?: string | undefined;
-                retryAt?: number | undefined;
-                reportId?: string | undefined;
-                session?: string | undefined;
-                delegationId?: string | undefined;
                 at: number;
             } | undefined;
             source?: string | undefined;
             logDir?: string | undefined;
         }> | undefined;
-        repair?: {
-            rounds: number;
-            source: string;
-            delegationId?: string | undefined;
-            lastFailure?: string | undefined;
-        } | undefined;
     }>;
-    archivePage: import("@dsh-workbench/react").PagedQueryResult<{
+    archivePage: import("@realiz3r/worka-react").PagedQueryResult<{
         [x: string]: unknown;
         key: string;
         title?: string | undefined;
@@ -321,10 +289,6 @@ export declare function usePreviewModel(): {
         }[] | undefined;
         status?: Record<string, {
             [x: string]: unknown;
-            feedbackSignature?: {
-                signature: string;
-                reportId: string;
-            } | undefined;
             phase: "failed" | "preparing" | "queued" | "ready" | "starting" | "stopped" | "stopping" | "verifying";
             url?: string | undefined;
             pass: string;
@@ -350,71 +314,39 @@ export declare function usePreviewModel(): {
                 }[];
             } | undefined;
             failure?: {
+                [x: string]: unknown;
                 message: string;
                 owner: "framework" | "project" | "user";
                 step?: string | undefined;
                 log?: string | undefined;
                 attempts: number;
-                handling?: "agent" | "agent-done" | "agent-pending" | "agent-unknown" | "awaiting-approval" | "coordinating" | "delivery-failed" | "exhausted" | "retrying" | "waiting-user" | undefined;
-                handlingNote?: string | undefined;
-                retryAt?: number | undefined;
-                reportId?: string | undefined;
-                session?: string | undefined;
-                delegationId?: string | undefined;
                 at: number;
             } | undefined;
             source?: string | undefined;
             logDir?: string | undefined;
         }> | undefined;
-        repair?: {
-            rounds: number;
-            source: string;
-            delegationId?: string | undefined;
-            lastFailure?: string | undefined;
-        } | undefined;
     }>;
     embedRows: Row[];
     closePreview: (key: string) => void;
     shared: boolean;
     config: Readonly<Partial<{
-        connections?: Record<string, {
-            provider: string;
-            connectionId: string;
-        }> | undefined;
-        gameRoot?: string | undefined;
-        gameCommit?: string | undefined;
-        adapter?: string | undefined;
-        coverAsset?: string | undefined;
         previewDesk?: {
             home: string;
             cli: string;
         } | undefined;
-        feedbackInTodo?: boolean | undefined;
-        projectId?: string | undefined;
         notes?: {
             todo?: string | undefined;
             execution?: string | undefined;
         } | undefined;
     }>>;
-    gameInstallation: import("@dsh-workbench/react").QueryResult<{
-        adapter?: string | undefined;
-        gameRoot?: string | undefined;
-        gameCommit?: string | undefined;
-        coverAsset?: string | undefined;
-    }, {
-        adapter?: string | undefined;
-        gameRoot?: string | undefined;
-        gameCommit?: string | undefined;
-        coverAsset?: string | undefined;
-    }>;
     refreshState: () => Promise<void>;
-    mode: import("@dsh-workbench/react/internal").WidgetMode;
+    mode: import("@realiz3r/worka-react/internal").WidgetMode;
     data: DisplayData;
-    actions: import("@dsh-workbench/react").NoteActions<typeof import("./actions"), "action">;
+    actions: import("@realiz3r/worka-react").NoteActions<typeof import("./actions"), "action">;
     workbench: {
         openLinkedNote: (key: string, direction: "source" | "target") => Promise<void>;
         openSetup: () => Promise<void>;
-        requestFromNote: (query: string, input: import("@dsh-workbench/runtime").JsonValue, requestId: string) => Promise<{
+        requestFromNote: (query: string, input: import("@realiz3r/worka-runtime").JsonValue, requestId: string) => Promise<{
             sessionId: string;
         }>;
         setCompactSurface: (surface: "card" | "transparent") => Promise<void>;
@@ -486,10 +418,6 @@ export declare function usePreviewModel(): {
         }[] | undefined;
         status?: Record<string, {
             [x: string]: unknown;
-            feedbackSignature?: {
-                signature: string;
-                reportId: string;
-            } | undefined;
             phase: "failed" | "preparing" | "queued" | "ready" | "starting" | "stopped" | "stopping" | "verifying";
             url?: string | undefined;
             pass: string;
@@ -515,28 +443,17 @@ export declare function usePreviewModel(): {
                 }[];
             } | undefined;
             failure?: {
+                [x: string]: unknown;
                 message: string;
                 owner: "framework" | "project" | "user";
                 step?: string | undefined;
                 log?: string | undefined;
                 attempts: number;
-                handling?: "agent" | "agent-done" | "agent-pending" | "agent-unknown" | "awaiting-approval" | "coordinating" | "delivery-failed" | "exhausted" | "retrying" | "waiting-user" | undefined;
-                handlingNote?: string | undefined;
-                retryAt?: number | undefined;
-                reportId?: string | undefined;
-                session?: string | undefined;
-                delegationId?: string | undefined;
                 at: number;
             } | undefined;
             source?: string | undefined;
             logDir?: string | undefined;
         }> | undefined;
-        repair?: {
-            rounds: number;
-            source: string;
-            delegationId?: string | undefined;
-            lastFailure?: string | undefined;
-        } | undefined;
     }[];
     rows: Row[];
     current: Row | undefined;
@@ -565,17 +482,15 @@ export declare function usePreviewModel(): {
     }[];
     availableFeatures: number;
     effectiveStatus: string;
-    repairButton: (row: Row) => import("react").JSX.Element | null;
     label: (spec: DisplayCandidate) => string;
     attach: (key: string) => void;
     reloadFrame: (key: string) => void;
     startAndAttach: (key: string) => void;
     startGroupAndAttach: (rows: Row[], selected: Row) => void;
     openDelegation: (spec: DisplayCandidate) => void;
-    draftTodo: () => void;
     attachedHere: boolean;
-    layout: Readonly<import("@dsh-workbench/react/internal").WidgetLayout>;
-    metadata: import("@dsh-workbench/runtime").NoteMetadata & {
+    layout: Readonly<import("@realiz3r/worka-react/internal").WidgetLayout>;
+    metadata: import("@realiz3r/worka-runtime").NoteMetadata & {
         id: string;
     };
 };

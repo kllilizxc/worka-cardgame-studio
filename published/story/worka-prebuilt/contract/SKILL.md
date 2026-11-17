@@ -1,10 +1,9 @@
 ---
 name: cardgame-story
-description: 从项目原文读取和修改剧情，沿章节、场景和选项定位。
+description: 实时分页阅读与直接编辑游戏剧情原稿、章节分支及关联记录，并在检查通过后提交到 main。
 ---
 
-以 scenes 搜索名称、对白或稳定 ID，从命中项取得 path、storyId、nodeId。通过 document 读取已登记资源的项目原文，首次读取或磁盘变更后可调用 refreshDocument。只使用已绑定检出。知识库不设另一个手工编辑器。
+用 `scenes` 分页检索场景，用 `scene({id})` 读取场景分支与引用，用 `document({path, startLine?, maxLines?, pages?})` 按行读取原文；优先查看 `note.recordTarget` 获取当前打开的场景。
 
-修改有 Markdown 原稿的场景时，编辑对应 knowledge 文件并运行项目的剧情编译与校验，使运行时图与原文一致。只在原游戏已有的 JSON 图上定义的场景直接编辑该文件。保留稳定 ID、选项条件与效果；按用户要求更改具体内容。在授权的代码对话中执行这些工作，再于桌面对话调用 game-project 的 refresh。已连接的章节导航读取共享索引，正文按需读取工作树中登记的原文。
-
-要试玩时把本场景的 storyId、nodeId、项目版本和待办身份交给原制作对话。由既有的待办交付试玩连线处理候选版本。已有记录关联通过宿主 links 和稳定场景 ID 导航。
+- 属于剧情自身的修改：有 Markdown 原稿的场景直接编辑已绑定 CardGame 检出中的 `knowledge/` 文件（仅存于运行时 JSON 图的场景编辑对应 `public/data/` 图文件），运行游戏的剧情数据检查与构建（`bun test src/game/types/storyContent.test.ts src/game/content/contentCatalog.test.ts` 与 `bun run build-nolog`），通过后直接 `git add` 并 `git commit` 到 `main` 分支，保持工作区干净。打开的便笺会自动实时显示改动，无需刷新命令。
+- 超出剧情范围的跨模块请求（如同时新增战斗、卡牌或商店奖励）：按「内容便笺 → 制作」连线在「制作待办」创建事项，关联当前场景记录并启动制作会话。

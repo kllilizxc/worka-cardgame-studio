@@ -1,4 +1,4 @@
-import { z } from '@dsh-workbench/runtime';
+import { z } from '@realiz3r/worka-runtime';
 export declare const candidateInputSchema: z.ZodObject<{
     key: z.ZodString;
     title: z.ZodOptional<z.ZodString>;
@@ -49,10 +49,6 @@ export declare const candidateSchema: z.ZodObject<{
         url: z.ZodString;
     }, z.core.$loose>>>;
     status: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
-        feedbackSignature: z.ZodOptional<z.ZodObject<{
-            signature: z.ZodString;
-            reportId: z.ZodString;
-        }, z.core.$strip>>;
         phase: z.ZodEnum<{
             failed: "failed";
             preparing: "preparing";
@@ -105,64 +101,11 @@ export declare const candidateSchema: z.ZodObject<{
             step: z.ZodOptional<z.ZodString>;
             log: z.ZodOptional<z.ZodString>;
             attempts: z.ZodNumber;
-            handling: z.ZodOptional<z.ZodEnum<{
-                agent: "agent";
-                "agent-done": "agent-done";
-                "agent-pending": "agent-pending";
-                "agent-unknown": "agent-unknown";
-                "awaiting-approval": "awaiting-approval";
-                coordinating: "coordinating";
-                "delivery-failed": "delivery-failed";
-                exhausted: "exhausted";
-                retrying: "retrying";
-                "waiting-user": "waiting-user";
-            }>>;
-            handlingNote: z.ZodOptional<z.ZodString>;
-            retryAt: z.ZodOptional<z.ZodNumber>;
-            reportId: z.ZodOptional<z.ZodString>;
-            session: z.ZodOptional<z.ZodString>;
-            delegationId: z.ZodOptional<z.ZodString>;
             at: z.ZodNumber;
-        }, z.core.$strip>>;
+        }, z.core.$loose>>;
         source: z.ZodOptional<z.ZodString>;
         logDir: z.ZodOptional<z.ZodString>;
     }, z.core.$loose>>>;
-    repair: z.ZodOptional<z.ZodObject<{
-        rounds: z.ZodNumber;
-        source: z.ZodString;
-        delegationId: z.ZodOptional<z.ZodString>;
-        lastFailure: z.ZodOptional<z.ZodString>;
-    }, z.core.$strip>>;
-}, z.core.$loose>;
-export declare const feedbackSchema: z.ZodObject<{
-    deliveryBlocked: z.ZodOptional<z.ZodString>;
-    deliveryAttempt: z.ZodOptional<z.ZodNumber>;
-    attemptedAt: z.ZodOptional<z.ZodNumber>;
-    id: z.ZodString;
-    delegationId: z.ZodOptional<z.ZodString>;
-    standalone: z.ZodOptional<z.ZodBoolean>;
-    autoRepair: z.ZodOptional<z.ZodBoolean>;
-    kind: z.ZodLiteral<"delivery-feedback">;
-    status: z.ZodEnum<{
-        failed: "failed";
-        passed: "passed";
-        unchecked: "unchecked";
-    }>;
-    subject: z.ZodString;
-    summary: z.ZodString;
-    userRequested: z.ZodOptional<z.ZodBoolean>;
-    observedAt: z.ZodOptional<z.ZodNumber>;
-    source: z.ZodOptional<z.ZodString>;
-    originNoteId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-    candidateKey: z.ZodString;
-    revision: z.ZodString;
-    commits: z.ZodOptional<z.ZodArray<z.ZodString>>;
-    surface: z.ZodString;
-    runId: z.ZodString;
-    diagnostics: z.ZodString;
-    repairable: z.ZodOptional<z.ZodString>;
-    title: z.ZodOptional<z.ZodString>;
-    project: z.ZodOptional<z.ZodString>;
 }, z.core.$loose>;
 export declare const dataSchema: z.ZodObject<{
     title: z.ZodString;
@@ -195,10 +138,6 @@ export declare const dataSchema: z.ZodObject<{
             url: z.ZodString;
         }, z.core.$loose>>>;
         status: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
-            feedbackSignature: z.ZodOptional<z.ZodObject<{
-                signature: z.ZodString;
-                reportId: z.ZodString;
-            }, z.core.$strip>>;
             phase: z.ZodEnum<{
                 failed: "failed";
                 preparing: "preparing";
@@ -251,34 +190,11 @@ export declare const dataSchema: z.ZodObject<{
                 step: z.ZodOptional<z.ZodString>;
                 log: z.ZodOptional<z.ZodString>;
                 attempts: z.ZodNumber;
-                handling: z.ZodOptional<z.ZodEnum<{
-                    agent: "agent";
-                    "agent-done": "agent-done";
-                    "agent-pending": "agent-pending";
-                    "agent-unknown": "agent-unknown";
-                    "awaiting-approval": "awaiting-approval";
-                    coordinating: "coordinating";
-                    "delivery-failed": "delivery-failed";
-                    exhausted: "exhausted";
-                    retrying: "retrying";
-                    "waiting-user": "waiting-user";
-                }>>;
-                handlingNote: z.ZodOptional<z.ZodString>;
-                retryAt: z.ZodOptional<z.ZodNumber>;
-                reportId: z.ZodOptional<z.ZodString>;
-                session: z.ZodOptional<z.ZodString>;
-                delegationId: z.ZodOptional<z.ZodString>;
                 at: z.ZodNumber;
-            }, z.core.$strip>>;
+            }, z.core.$loose>>;
             source: z.ZodOptional<z.ZodString>;
             logDir: z.ZodOptional<z.ZodString>;
         }, z.core.$loose>>>;
-        repair: z.ZodOptional<z.ZodObject<{
-            rounds: z.ZodNumber;
-            source: z.ZodString;
-            delegationId: z.ZodOptional<z.ZodString>;
-            lastFailure: z.ZodOptional<z.ZodString>;
-        }, z.core.$strip>>;
     }, z.core.$loose>>;
     archivedCandidates: z.ZodOptional<z.ZodArray<z.ZodObject<{
         key: z.ZodString;
@@ -309,10 +225,6 @@ export declare const dataSchema: z.ZodObject<{
             url: z.ZodString;
         }, z.core.$loose>>>;
         status: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
-            feedbackSignature: z.ZodOptional<z.ZodObject<{
-                signature: z.ZodString;
-                reportId: z.ZodString;
-            }, z.core.$strip>>;
             phase: z.ZodEnum<{
                 failed: "failed";
                 preparing: "preparing";
@@ -365,67 +277,13 @@ export declare const dataSchema: z.ZodObject<{
                 step: z.ZodOptional<z.ZodString>;
                 log: z.ZodOptional<z.ZodString>;
                 attempts: z.ZodNumber;
-                handling: z.ZodOptional<z.ZodEnum<{
-                    agent: "agent";
-                    "agent-done": "agent-done";
-                    "agent-pending": "agent-pending";
-                    "agent-unknown": "agent-unknown";
-                    "awaiting-approval": "awaiting-approval";
-                    coordinating: "coordinating";
-                    "delivery-failed": "delivery-failed";
-                    exhausted: "exhausted";
-                    retrying: "retrying";
-                    "waiting-user": "waiting-user";
-                }>>;
-                handlingNote: z.ZodOptional<z.ZodString>;
-                retryAt: z.ZodOptional<z.ZodNumber>;
-                reportId: z.ZodOptional<z.ZodString>;
-                session: z.ZodOptional<z.ZodString>;
-                delegationId: z.ZodOptional<z.ZodString>;
                 at: z.ZodNumber;
-            }, z.core.$strip>>;
+            }, z.core.$loose>>;
             source: z.ZodOptional<z.ZodString>;
             logDir: z.ZodOptional<z.ZodString>;
         }, z.core.$loose>>>;
-        repair: z.ZodOptional<z.ZodObject<{
-            rounds: z.ZodNumber;
-            source: z.ZodString;
-            delegationId: z.ZodOptional<z.ZodString>;
-            lastFailure: z.ZodOptional<z.ZodString>;
-        }, z.core.$strip>>;
     }, z.core.$loose>>>;
     attached: z.ZodArray<z.ZodString>;
-    outbox: z.ZodOptional<z.ZodArray<z.ZodObject<{
-        deliveryBlocked: z.ZodOptional<z.ZodString>;
-        deliveryAttempt: z.ZodOptional<z.ZodNumber>;
-        attemptedAt: z.ZodOptional<z.ZodNumber>;
-        id: z.ZodString;
-        delegationId: z.ZodOptional<z.ZodString>;
-        standalone: z.ZodOptional<z.ZodBoolean>;
-        autoRepair: z.ZodOptional<z.ZodBoolean>;
-        kind: z.ZodLiteral<"delivery-feedback">;
-        status: z.ZodEnum<{
-            failed: "failed";
-            passed: "passed";
-            unchecked: "unchecked";
-        }>;
-        subject: z.ZodString;
-        summary: z.ZodString;
-        userRequested: z.ZodOptional<z.ZodBoolean>;
-        observedAt: z.ZodOptional<z.ZodNumber>;
-        source: z.ZodOptional<z.ZodString>;
-        originNoteId: z.ZodOptional<z.ZodNullable<z.ZodString>>;
-        candidateKey: z.ZodString;
-        revision: z.ZodString;
-        commits: z.ZodOptional<z.ZodArray<z.ZodString>>;
-        surface: z.ZodString;
-        runId: z.ZodString;
-        diagnostics: z.ZodString;
-        repairable: z.ZodOptional<z.ZodString>;
-        title: z.ZodOptional<z.ZodString>;
-        project: z.ZodOptional<z.ZodString>;
-    }, z.core.$loose>>>;
-    feedbackError: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$loose>;
 export declare const renameInputSchema: z.ZodObject<{
     key: z.ZodOptional<z.ZodString>;

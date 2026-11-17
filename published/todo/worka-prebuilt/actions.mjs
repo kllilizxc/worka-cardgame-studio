@@ -33,7 +33,6 @@ __export(exports_actions, {
   feedback: () => feedback,
   generateSuggestions: () => generateSuggestions,
   importItems: () => importItems,
-  installExampleWork: () => installExampleWork,
   item: () => item,
   itemField: () => itemField,
   itemLocation: () => itemLocation,
@@ -42,6 +41,7 @@ __export(exports_actions, {
   items: () => items,
   linkSession: () => linkSession,
   list: () => list,
+  markChangeWork: () => markChangeWork,
   moveTodo: () => moveTodo,
   note: () => note,
   progressTimeline: () => progressTimeline,
@@ -50,8 +50,10 @@ __export(exports_actions, {
   requestDelegation: () => requestDelegation,
   requirement: () => requirement,
   saveNewTodo: () => saveNewTodo,
+  sessionActivityPage: () => sessionActivityPage,
   sessionItems: () => sessionItems,
   sessionLinked: () => sessionLinked,
+  sessionStarted: () => sessionStarted,
   sessionTask: () => sessionTask,
   setArchived: () => setArchived,
   sourceMetadata: () => sourceMetadata,
@@ -59,9 +61,13 @@ __export(exports_actions, {
   suggestionsCompleted: () => suggestionsCompleted,
   summary: () => summary,
   toggleTodo: () => toggleTodo,
+  unblockRequest: () => unblockRequest,
   updateStatus: () => updateStatus,
   upsertExternalItem: () => upsertExternalItem
 });
+
+// default-category.ts
+var DEFAULT_CATEGORY = "__worka_default_daily__";
 
 
 var DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60000;
@@ -6443,7 +6449,19 @@ function operation(kind, definition, handler) {
     assertJson(result.data);
     return result.data;
   };
-  const captured = Object.freeze({ ...definition, kind, input: inputSchema, output: outputSchema, execute });
+  if (definition.idempotent === true && definition.receipt !== undefined && definition.receipt !== "idempotent")
+    throw new Error("idempotent: true conflicts with a non-idempotent receipt declaration");
+  if (definition.idempotent === false && definition.receipt === "idempotent")
+    throw new Error('idempotent: false conflicts with receipt: "idempotent"');
+  const normalizedReceipt = definition.idempotent === true ? "idempotent" : definition.receipt;
+  const captured = Object.freeze({
+    ...definition,
+    ...normalizedReceipt !== undefined ? { receipt: normalizedReceipt } : {},
+    kind,
+    input: inputSchema,
+    output: outputSchema,
+    execute
+  });
   const reference = { kind };
   Object.defineProperty(reference, definitionKey, { value: captured });
   return Object.freeze(reference);
@@ -6608,7 +6626,129 @@ function collectionAccess(note, raw, writable) {
       throw new Error("Incomplete collection read. Use ctx.db.page and follow its cursor to read the complete result.");
     return result.items;
   };
-  const read = { get, page, list };
+  const find = async (name, options = {}) => {
+    const def = declared(name);
+    const allowedKeys = new Set(["where", "search", "sort", "select", "limit", "scanLimit"]);
+    if (Object.keys(options).some((k) => !allowedKeys.has(k)))
+      throw new Error("Unknown find option");
+    const limitRaw = typeof options.limit === "number" && Number.isFinite(options.limit) ? Math.floor(options.limit) : 200;
+    const limit = Math.max(1, Math.min(500, limitRaw));
+    const scanRaw = typeof options.scanLimit === "number" && Number.isFinite(options.scanLimit) ? Math.floor(options.scanLimit) : 600;
+    const scanLimit = Math.max(limit, Math.min(2000, scanRaw));
+    const rawWhere = options.where ?? {};
+    const pushdownWhere = {};
+    const inMemorySets = [];
+    for (const [field, val] of Object.entries(rawWhere)) {
+      if (!Object.hasOwn(def.schema.shape, field) && field !== "id")
+        throw new Error(`Unknown filter field: ${field}`);
+      if (Array.isArray(val)) {
+        inMemorySets.push([field, new Set(val)]);
+      } else if (val === null || ["string", "number", "boolean"].includes(typeof val)) {
+        pushdownWhere[field] = val;
+      } else if (val !== undefined) {
+        throw new Error("Find filters support scalar equality or scalar arrays");
+      }
+    }
+    const sortSpec = Array.isArray(options.sort) ? options.sort.map((s) => ({ field: s.field, direction: s.direction ?? "asc" })) : Object.entries(options.sort ?? {}).map(([field, direction]) => ({ field, direction }));
+    for (const s of sortSpec) {
+      if (!Object.hasOwn(def.schema.shape, s.field) || !["asc", "desc"].includes(s.direction)) {
+        throw new Error(`Invalid sort field or direction: ${s.field}`);
+      }
+    }
+    const searchObj = typeof options.search === "string" ? { query: options.search } : options.search;
+    const needle = searchObj?.query?.trim().toLocaleLowerCase() ?? "";
+    const searchFields = searchObj?.fields ? [...searchObj.fields] : undefined;
+    if (searchFields) {
+      for (const f of searchFields) {
+        if (!Object.hasOwn(def.schema.shape, f))
+          throw new Error(`Unknown search field: ${f}`);
+      }
+    }
+    const requestedSelect = Array.isArray(options.select) ? [...options.select] : undefined;
+    const neededExtra = new Set;
+    if (requestedSelect) {
+      for (const [f] of inMemorySets)
+        if (f !== "id" && !requestedSelect.includes(f))
+          neededExtra.add(f);
+      for (const s of sortSpec)
+        if (!requestedSelect.includes(s.field))
+          neededExtra.add(s.field);
+      if (needle) {
+        const candidates = searchFields ?? Object.keys(def.schema.shape);
+        for (const f of candidates)
+          if (!requestedSelect.includes(f))
+            neededExtra.add(f);
+      }
+    }
+    const pageSelect = requestedSelect ? [...requestedSelect, ...neededExtra] : undefined;
+    const pushdownOrder = sortSpec.length === 1 ? { [sortSpec[0].field]: sortSpec[0].direction } : undefined;
+    const scanned = [];
+    let cursor;
+    let revision = "0";
+    let hitScanCeiling = false;
+    do {
+      const batch = await page(name, {
+        ...Object.keys(pushdownWhere).length ? { where: pushdownWhere } : {},
+        ...pushdownOrder ? { orderBy: pushdownOrder } : {},
+        ...pageSelect ? { select: pageSelect } : {},
+        ...cursor ? { cursor } : {}
+      });
+      revision = batch.revision;
+      for (const row of batch.items) {
+        scanned.push(row);
+        if (scanned.length >= scanLimit) {
+          if (batch.next !== undefined)
+            hitScanCeiling = true;
+          break;
+        }
+      }
+      if (scanned.length >= scanLimit)
+        break;
+      cursor = batch.next;
+    } while (cursor);
+    let matched = scanned;
+    if (inMemorySets.length) {
+      matched = matched.filter((row) => inMemorySets.every(([field, allowed]) => allowed.has(row[field])));
+    }
+    if (needle) {
+      matched = matched.filter((row) => {
+        const keys = searchFields ?? Object.keys(row);
+        return keys.some((k) => typeof row[k] === "string" && row[k].toLocaleLowerCase().includes(needle));
+      });
+    }
+    if (sortSpec.length > 1) {
+      matched = [...matched].sort((a, b) => {
+        for (const { field, direction } of sortSpec) {
+          const av = a[field], bv = b[field];
+          if (av === bv)
+            continue;
+          if (av === undefined || av === null)
+            return 1;
+          if (bv === undefined || bv === null)
+            return -1;
+          const cmp = av < bv ? -1 : 1;
+          return direction === "desc" ? -cmp : cmp;
+        }
+        return 0;
+      });
+    }
+    const totalMatched = matched.length;
+    const sliced = matched.slice(0, limit).map((row) => {
+      if (!neededExtra.size || !requestedSelect)
+        return row;
+      const copy = { id: row.id };
+      for (const f of requestedSelect)
+        copy[f] = row[f];
+      return copy;
+    });
+    return freezeJson({
+      items: sliced,
+      totalMatched,
+      truncated: hitScanCeiling || totalMatched > limit,
+      revision
+    });
+  };
+  const read = { get, page, list, find };
   if (!writable)
     return Object.freeze(read);
   return Object.freeze({
@@ -6707,7 +6847,7 @@ function bindActionContext(note, raw) {
     return raw.invoke({ kind, name: target.name, input });
   };
   const action = raw;
-  const { agent, notifications, previews, extensions, quip, slack, subprocess } = action;
+  const { agent, notifications, previews, extensions, subprocess } = action;
   return Object.freeze({
     note: identity(raw),
     signal: raw.signal,
@@ -6725,7 +6865,18 @@ function bindActionContext(note, raw) {
       ...agent?.prepare ? { prepare: agent.prepare.bind(agent) } : {},
       ...agent?.stop ? { stop: agent.stop.bind(agent) } : {},
       result: (runId) => agent.result(runId, { wait: false })
-    }), notifications, previews, extensions, quip, slack, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    }), notifications, previews, extensions, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    decide: async (request) => {
+      assertJson(request);
+      if (!raw.decide) {
+        const answers = Object.fromEntries(request.items.map((item) => {
+          const first = typeof item.choices[0] === "string" ? item.choices[0] : item.choices[0].value;
+          return [item.id, { choice: item.fallback ?? first, confidence: 0 }];
+        }));
+        return { answers, backend: "degraded", degraded: true };
+      }
+      return raw.decide(request);
+    },
     jobs: Object.freeze({
       infer: (request, options) => {
         const onComplete = operationTarget(options.onComplete, note, ["mutation", "action"]);
@@ -6977,7 +7128,7 @@ function utf8(value) {
 var attachmentSchema = fileRefSchema.extend({
   name: string2(),
   mime: string2(),
-  size: number2().int().min(0).max(4 * 1024 * 1024),
+  size: number2().int().min(0).max(NOTE_FILE_MAX_BYTES),
   sha256: string2()
 });
 var attachmentsSchema = array(attachmentSchema).max(20);
@@ -6989,6 +7140,9 @@ async function validateAttachments(ctx, input) {
 
 // model.ts
 var todoStatusSchema = _enum(["todo", "in_progress", "blocking", "done"]);
+var unblockProposalSchema = object({ label: string2().trim().min(1).max(120), target: object({ noteId: string2().min(1) }), request: string2().min(1) });
+var unblockActionSchema = unblockProposalSchema.extend({ requestId: string2().min(1) });
+var todoWorkKindSchema = _enum(["answer", "change"]);
 var todoPrioritySchema = _enum(["low", "medium", "high"]);
 var progressSourceSchema = _enum(["recordProgress", "feedback", "current"]);
 var progressEntrySchema = object({
@@ -7036,7 +7190,10 @@ var sourceIconSchema = union([
 var displaySourceSchema = taskSourceSchema.extend({ icon: sourceIconSchema.optional(), url: string2().optional() });
 var todoItemSchema = looseObject({
   assignment: object({ requestId: string2(), fingerprint: string2(), sessionId: string2(), phase: _enum(["reserved", "queued", "completed", "failed", "unknown"]), jobId: string2().optional(), error: string2().optional() }).optional(),
+  workKind: todoWorkKindSchema.optional(),
+  unblockAction: unblockActionSchema.optional(),
   id: string2(),
+  featureId: string2().optional(),
   sessions: array(sessionLinkSchema).optional(),
   taskSources: array(taskSourceSchema).optional(),
   archived: boolean2().optional(),
@@ -7071,6 +7228,7 @@ var todoItemSchema = looseObject({
   delegatedRunStatus: _enum(["queued", "started", "accepted", "completed"]).optional()
 });
 var storedTodoItemSchema = todoItemSchema.extend({
+  workKind: string2().min(1).max(64).optional(),
   status: union([todoStatusSchema, literal("blocked")]).optional(),
   createdAt: string2().optional()
 });
@@ -7088,7 +7246,6 @@ var todoSnapshotSchema = object({
 });
 var revisionOutputSchema = object({ revision: string2() });
 var todoConfigSchema = looseObject({
-  includeExampleWork: boolean2().optional(),
   filter: _enum(["all", "active", "completed"]).optional()
 });
 function normalizeStatus(item) {
@@ -7102,6 +7259,7 @@ function normalizeStatus(item) {
 var countsSchema = object({ todo: number2(), in_progress: number2(), blocking: number2(), done: number2() });
 var summarySchema = object({ total: number2(), attachmentCount: number2(), counts: countsSchema, revision: number2(), name: string2(), firstPosition: string2().optional() });
 var note = defineNote({
+  records: [{ collection: "items", id: "/id", route: { path: "/tasks/:itemId", param: "itemId" }, label: "/title", aliases: ["/taskId", "/view/taskId", { items: "/sessions", id: "/taskId" }], session: "/view/primarySessionId", links: [{ noteId: "/delegation/deskNoteId", recordId: "/delegation/id" }], identities: [{ namespace: "feature", value: "/featureId" }] }],
   config: { schema: todoConfigSchema, defaults: {} },
   collections: {
     items: { schema: storedTodoItemSchema.omit({ id: true }).extend({
@@ -7153,7 +7311,8 @@ var feedbackInputSchema = object({
   itemId: string2(),
   status: todoStatusSchema,
   conclusion: string2(),
-  expectedRevision: string2().optional()
+  expectedRevision: string2().optional(),
+  unblockAction: unblockProposalSchema.optional()
 });
 var moveTodoInputSchema = object({
   id: string2(),
@@ -7178,6 +7337,7 @@ var importItemInputSchema = object({
   title: string2(),
   description: string2().optional(),
   priority: todoPrioritySchema.optional(),
+  workKind: todoWorkKindSchema.optional(),
   category: string2().optional(),
   dueDate: string2().optional(),
   source: todoItemSourceSchema.optional()
@@ -7198,7 +7358,7 @@ var changed = note.event({
   name: "items.changed",
   visibility: "public",
   description: "一个待办条目发生变化；itemId 是稳定条目 ID，接收方按需查询当前内容。",
-  payload: object({ itemId: string2(), title: string2(), revision: string2() }),
+  payload: object({ itemId: string2(), title: string2(), revision: string2(), workKind: string2().min(1).max(64).optional() }),
   objectRef: "/itemId",
   objectLabel: "/title",
   revision: "/revision"
@@ -7358,13 +7518,13 @@ function importKey(item) {
   return item.source ? sha256(JSON.stringify({ kind: item.source.kind, itemId: item.source.itemId, task: item.source.taskKey ?? item.title.trim().toLocaleLowerCase() })) : null;
 }
 function between(a = "", b) {
-  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  const alphabet = "!0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   if (b !== undefined && a >= b)
     throw new Error("Invalid task order");
   let prefix = "";
-  for (let i = 0;i < 128; i++) {
+  for (let i = 0;; i++) {
     const low = i < a.length ? alphabet.indexOf(a[i]) : 0;
-    const high = b !== undefined && i < b.length ? alphabet.indexOf(b[i]) : 61;
+    const high = b !== undefined && i < b.length ? alphabet.indexOf(b[i]) : alphabet.length - 1;
     if (low < 0 || high < 0)
       throw new Error("Invalid task position");
     if (high - low > 1)
@@ -7373,7 +7533,9 @@ function between(a = "", b) {
     if (low < high)
       b = undefined;
   }
-  throw new Error("Task order exceeds the supported precision");
+}
+function frontPosition(revision) {
+  return `!${(Number.MAX_SAFE_INTEGER - revision).toString().padStart(16, "0")}`;
 }
 function business(row) {
   const { view: _view, position: _position, revision: _revision, normalizedTitle: _title, active: _active, ...item } = row;
@@ -7387,6 +7549,10 @@ async function getItem(ctx, id) {
 }
 async function saveItem(ctx, item, id, position, publish = true) {
   const previous = id ? await ctx.db.get("items", id) : null;
+  if (item && normalizeStatus(item) !== "blocking" && item.unblockAction) {
+    item = { ...item };
+    delete item.unblockAction;
+  }
   if (item && (item.startDate !== previous?.startDate || item.dueDate !== previous?.dueDate))
     validateSchedule(item);
   const all = structuredClone(await ctx.db.get("totals", "all") ?? emptyStats());
@@ -7396,8 +7562,8 @@ async function saveItem(ctx, item, id, position, publish = true) {
   const { id: _projectedId, ...projectedView } = projected ?? {};
   if (item && previous && [...new Set([...Object.keys(previous.view), ...Object.keys(projectedView)])].every((key) => JSON.stringify(previous.view[key]) === JSON.stringify(projectedView[key])) && JSON.stringify(business(previous ?? { id })) === JSON.stringify(item) && (position === undefined || position === previous?.position))
     return String(previous.revision);
-  const nextPosition = position ?? (item ? between("", all.firstPosition) : previous.position);
   const nextRevision = all.revision + 1;
+  const nextPosition = position ?? (item ? frontPosition(nextRevision) : previous.position);
   const adjust = (stats, value, sign) => {
     if (value.archived)
       return;
@@ -7458,7 +7624,7 @@ async function saveItem(ctx, item, id, position, publish = true) {
   if (nextImport)
     await ctx.db.put("imports", nextImport, { itemId: id });
   if (publish)
-    await changed.publish(ctx, { itemId: id, title: item?.title ?? previous.title, revision: String(nextRevision) }, { key: `${id}:${nextRevision}` });
+    await changed.publish(ctx, { itemId: id, title: item?.title ?? previous.title, revision: String(nextRevision), ...(item ?? previous)?.workKind ? { workKind: (item ?? previous).workKind } : {} }, { key: `${id}:${nextRevision}` });
   return String(nextRevision);
 }
 async function insertItem(ctx, value) {
@@ -7533,6 +7699,14 @@ function projectProgressEntries(entries) {
     return true;
   }).sort((a, b) => (b.recordedAt ?? Infinity) - (a.recordedAt ?? Infinity) || a.id.localeCompare(b.id));
 }
+function unblockForProgress(item, proposal, noteId, revision) {
+  if (!proposal)
+    return;
+  const previous = item.unblockAction;
+  if (previous && JSON.stringify([previous.label, previous.target.noteId, previous.request]) === JSON.stringify([proposal.label, proposal.target.noteId, proposal.request]))
+    return previous;
+  return { ...proposal, requestId: "todo-unblock:" + sha256(JSON.stringify([noteId, item.id, revision, proposal])) };
+}
 
 // progress-store.ts
 async function appendProgress(ctx, item, revision, source, input) {
@@ -7548,6 +7722,93 @@ async function appendProgress(ctx, item, revision, source, input) {
     source
   });
 }
+
+// sessions.ts
+var sourceReference = object({ noteId: string2().min(1), itemId: string2().optional() });
+var sessionLinked = note.event({ name: "items.sessionLinked", visibility: "public", description: "事项关联了原生会话。关联不等于开始执行或业务完成。", payload: object({ itemId: string2(), title: string2(), taskId: string2(), sessionId: string2(), revision: string2(), workKind: string2().min(1).max(64).optional() }), objectRef: "/itemId", objectLabel: "/title", revision: "/revision" });
+var sessionIdentity = object({ itemId: string2().min(1), taskId: string2().min(1), sessionId: string2().min(1), title: string2(), source: sourceReference.optional() });
+var linkSession = note.mutation({ visibility: "public", description: "把已准备的原生会话关联到本事项，保留稳定任务身份和已核实来源；不会发送要求或恢复工作。", input: sessionIdentity, output: object({ itemId: string2(), taskId: string2(), sessionId: string2(), revision: string2(), duplicate: boolean2() }), objectRef: "/itemId", revision: "/revision" }, async (ctx, input) => {
+  return saveSessionLink(ctx, input);
+});
+async function saveSessionLink(ctx, input, assigned = false, assignment) {
+  const row = await getItem(ctx, input.itemId), item = business(row), sessions = [...item.sessions ?? []];
+  if (assigned && item.archived)
+    throw Error("请先恢复这项待办再交办");
+  const previous = sessions.find((link) => link.taskId === input.taskId);
+  if (previous && previous.sessionId !== input.sessionId)
+    throw Error("原任务已关联其他会话，请先核对原会话接续关系");
+  const source = input.source ? { kind: "note", key: "note:" + input.source.noteId, ...input.source } : undefined;
+  const sources = [...item.taskSources ?? []];
+  if (source && !sources.some((old) => old.noteId === source.noteId && old.itemId === source.itemId))
+    sources.push(source);
+  if (!previous)
+    sessions.push({ taskId: input.taskId, sessionId: input.sessionId, title: input.title });
+  const duplicate = !!previous && JSON.stringify(sources) === JSON.stringify(item.taskSources ?? []) && (!assigned || item.status === "in_progress") && assignment === undefined;
+  if (duplicate)
+    return { itemId: row.id, taskId: input.taskId, sessionId: input.sessionId, revision: String(row.revision), duplicate: true };
+  const revision = await saveItem(ctx, { ...item, sessions, taskSources: sources, ...assignment ? { assignment } : {}, ...assigned ? { status: "in_progress", completed: false } : {} }, row.id);
+  await ctx.db.put("sessionIndex", JSON.stringify([input.taskId, row.id]), { taskId: input.taskId, itemId: row.id });
+  await sessionLinked.publish(ctx, { itemId: row.id, title: item.title, taskId: input.taskId, sessionId: input.sessionId, revision, ...item.workKind ? { workKind: item.workKind } : {} });
+  return { itemId: row.id, taskId: input.taskId, sessionId: input.sessionId, revision, duplicate: false };
+}
+var itemSessionSchema = object({ itemId: string2(), title: string2(), status: todoStatusSchema, sessions: array(sessionLinkSchema), archived: boolean2().optional() });
+var sessionItems = note.query({ visibility: "public", description: "分页读取事项与它们关联的会话；不会查询或启动原生执行。", input: pageInput, output: object({ items: array(itemSessionSchema), revision: string2(), next: string2().optional() }) }, async (ctx, input) => {
+  const page = await ctx.db.page("items", { cursor: input.cursor, orderBy: { position: "asc" }, select: ["title", "status", "sessions", "archived"] });
+  return { ...page, items: page.items.map((row) => ({ itemId: row.id, title: row.title, status: row.status, sessions: row.sessions ?? [], ...row.archived === undefined ? {} : { archived: row.archived } })) };
+});
+var sessionTask = note.query({ visibility: "public", description: "由保留的任务身份定位所有相关事项，保留历史多对多关系。", input: object({ taskId: string2() }), output: object({ items: array(itemSessionSchema) }) }, async (ctx, { taskId }) => {
+  const page = await ctx.db.page("sessionIndex", { where: { taskId } });
+  if (page.next)
+    throw Error("该任务关联事项超出单次查询预算");
+  const rows = await Promise.all(page.items.map((index) => ctx.db.get("items", index.itemId)));
+  return { items: rows.flatMap((row) => row ? [{ itemId: row.id, title: row.title, status: row.status, sessions: row.sessions ?? [], ...row.archived === undefined ? {} : { archived: row.archived } }] : []) };
+});
+var sourceMetadata = note.query({ visibility: "private", input: object({ ids: array(string2()).max(25) }), output: array(object({ id: string2(), name: string2(), icon: sourceIconSchema.optional() })) }, async (ctx, { ids }) => (await Promise.all([...new Set(ids)].map((id) => ctx.notes.lookup({ id })))).flat());
+var executionDetails = note.query({ visibility: "public", description: "按事项查看全部关联会话和准确来源。", input: object({ itemId: string2() }), output: object({ sessions: array(sessionLinkSchema), sources: array(displaySourceSchema) }) }, async (ctx, { itemId }) => {
+  const row = await getItem(ctx, itemId), [sources] = await resolveTodoSources(ctx, [row]);
+  return { sessions: row.sessions ?? [], sources };
+});
+var timelineEntrySchema = progressEntrySchema.omit({ conclusionKey: true }).extend({ id: string2(), recordedAt: number2().int().nonnegative().optional() });
+var progressTimeline = note.query({
+  visibility: "private",
+  description: "分页读取真实进展记录，原文保留；没有时间的当前结论不补造时间。",
+  input: pageInput.extend({ itemId: string2() }),
+  output: object({ items: array(timelineEntrySchema), revision: string2(), next: string2().optional() })
+}, async (ctx, input) => {
+  const row = await getItem(ctx, input.itemId);
+  const page = await ctx.db.page("progressEntries", { where: { itemId: input.itemId }, orderBy: { recordedAt: "desc" }, cursor: input.cursor });
+  const entries = [...page.items];
+  if (!input.cursor) {
+    const conclusion = row.conclusion?.trim(), recorded = conclusion ? await ctx.db.page("progressEntries", { where: { itemId: input.itemId, conclusionKey: sha256(progressTextIdentity(conclusion)) }, select: ["summary"] }) : undefined;
+    if (conclusion && !recorded?.items.length && !entries.some((entry) => progressTextIdentity(entry.conclusion) === progressTextIdentity(conclusion)))
+      entries.unshift({
+        id: `current:${input.itemId}`,
+        itemId: input.itemId,
+        source: "current",
+        status: row.status,
+        summary: shortProgressText(conclusion),
+        conclusion: row.conclusion ?? conclusion
+      });
+  }
+  return { items: projectProgressEntries(entries).map((entry) => timelineEntrySchema.parse({ ...entry, summary: shortProgressText(entry.summary) })), revision: `${page.revision}:${row.revision}`, ...page.next ? { next: page.next } : {} };
+});
+var setArchived = note.mutation({ visibility: "private", input: object({ itemId: string2(), archived: boolean2() }), output: object({ revision: string2() }) }, async (ctx, { itemId, archived }) => {
+  const row = await getItem(ctx, itemId);
+  return { revision: await saveItem(ctx, { ...business(row), archived }, itemId) };
+});
+async function announceChangeSessions(ctx, item, revision) {
+  for (const session of item.sessions ?? [])
+    await sessionLinked.publish(ctx, { itemId: item.id, title: item.title, taskId: session.taskId, sessionId: session.sessionId, revision, workKind: "change" }, { key: `${item.id}:${revision}:${session.sessionId}:change` });
+}
+var markChangeWork = note.mutation({ visibility: "public", description: "事项范围扩展为实施或交付时标记为 change，并通知交付连线关注已有会话。", input: object({ itemId: string2() }), output: object({ revision: string2() }) }, async (ctx, { itemId }) => {
+  const row = await getItem(ctx, itemId), item = business(row);
+  if (item.workKind === "change")
+    return { revision: String(row.revision) };
+  const revision = await saveItem(ctx, { ...item, workKind: "change" }, itemId);
+  if (item.workKind === "answer")
+    await announceChangeSessions(ctx, item, revision);
+  return { revision };
+});
 
 // collaboration.ts
 var progressFeedbackInputSchema = feedbackInputSchema.extend({ summary: string2().optional() });
@@ -7587,7 +7848,7 @@ var moveTodo = note.mutation({
     cursor = page.next;
   } while (cursor);
   const item = { ...business(moving), status: input.status, completed: input.status === "done" };
-  return { id: input.id, status: input.status, index: targetIndex ?? index, revision: await saveItem(ctx, item, input.id, between(previous, next)) };
+  return { id: input.id, status: input.status, index: targetIndex ?? index, revision: await saveItem(ctx, item, input.id, previous === undefined ? undefined : between(previous, next)) };
 });
 function validateTodoImages(images) {
   if (images === undefined)
@@ -7649,15 +7910,18 @@ var feedback = note.mutation({
   const row = await getItem(ctx, input.itemId);
   if (input.expectedRevision && input.expectedRevision !== String(row.revision))
     throw new Error("待办版本已变化，请重新读取");
-  if (input.status === "done" && row.status !== "done")
-    throw new Error("只有用户可以确认任务完成；请移到 blocking 并记录待用户 review 的成果");
-  if (sameProgress(business(row), { status: input.status, conclusion: input.conclusion }))
+  if (input.unblockAction && input.status !== "blocking")
+    throw Error("解除阻塞操作只能用于阻塞中的待办");
+  const current = business(row), unblockAction = input.status === "blocking" ? unblockForProgress(current, input.unblockAction, ctx.note.id, String(row.revision)) : undefined;
+  if (sameProgress(current, { status: input.status, conclusion: input.conclusion }) && JSON.stringify(current.unblockAction ?? null) === JSON.stringify(unblockAction ?? null))
     return { itemId: row.id, status: row.status, revision: String(row.revision) };
+  const { unblockAction: _oldAction, ...withoutAction } = current;
   const item = {
-    ...business(row),
+    ...withoutAction,
     status: input.status,
     completed: input.status === "done",
     conclusion: input.conclusion.trim(),
+    ...unblockAction ? { unblockAction } : {},
     delegatedAt: row.delegatedAt ?? new Date().toISOString(),
     delegatedRunStatus: "completed"
   };
@@ -7673,8 +7937,9 @@ function createTodoItem(input, identity) {
     title: input.title.trim(),
     status,
     completed: status === "done",
+    ...input.workKind ? { workKind: input.workKind } : {},
     priority: input.priority ?? "medium",
-    category: input.category?.trim() || "日常",
+    category: input.category?.trim() || DEFAULT_CATEGORY,
     ...input.dueDate ? { dueDate: input.dueDate } : {},
     createdAt: identity.createdAt,
     ...input.description?.trim() ? { description: input.description.trim() } : {},
@@ -7697,12 +7962,18 @@ async function importInTransaction(ctx, input) {
       item = business(existing);
       revision = String(existing.revision);
       const description = entry.description?.trim() ?? "";
-      if (input.mode !== "upsert" || item.title === title && (item.description ?? "") === description) {
+      const dueDate = entry.dueDate === undefined ? item.dueDate : entry.dueDate.trim() || undefined;
+      const promote = entry.workKind === "change" && item.workKind !== "change";
+      const reannounce = promote && item.workKind === "answer";
+      if (input.mode !== "upsert" || !promote && item.title === title && (item.description ?? "") === description && item.dueDate === dueDate) {
         results.push({ itemId: item.id, deduped: true });
         continue;
       }
-      item = { ...item, title, description, sourceAutoUpdatedAt: new Date().toISOString() };
+      const { dueDate: _previousDueDate, ...current } = item;
+      item = { ...current, title, description, ...dueDate ? { dueDate } : {}, ...promote ? { workKind: "change" } : {}, sourceAutoUpdatedAt: new Date().toISOString() };
       revision = await saveItem(ctx, item, item.id);
+      if (reannounce)
+        await announceChangeSessions(ctx, item, revision);
       result = { itemId: item.id, updated: true };
     } else {
       const created = await insertItem(ctx, createTodoItem(entry, { id: "", createdAt: new Date().toISOString() }));
@@ -7735,79 +8006,6 @@ var importItems = note.mutation({
   input: importItemsInputSchema,
   output: object({ results: array(importItemResultSchema) })
 }, importInTransaction);
-// sessions.ts
-var sourceReference = object({ noteId: string2().min(1), itemId: string2().optional() });
-var sessionLinked = note.event({ name: "items.sessionLinked", visibility: "public", description: "事项关联了原生会话。关联不等于开始执行或业务完成。", payload: object({ itemId: string2(), title: string2(), taskId: string2(), sessionId: string2(), revision: string2() }), objectRef: "/itemId", objectLabel: "/title", revision: "/revision" });
-var sessionIdentity = object({ itemId: string2().min(1), taskId: string2().min(1), sessionId: string2().min(1), title: string2(), source: sourceReference.optional() });
-var linkSession = note.mutation({ visibility: "public", description: "把已准备的原生会话关联到本事项，保留稳定任务身份和已核实来源；不会发送要求或恢复工作。", input: sessionIdentity, output: object({ itemId: string2(), taskId: string2(), sessionId: string2(), revision: string2(), duplicate: boolean2() }), objectRef: "/itemId", revision: "/revision" }, async (ctx, input) => {
-  return saveSessionLink(ctx, input);
-});
-async function saveSessionLink(ctx, input, assigned = false, assignment) {
-  const row = await getItem(ctx, input.itemId), item = business(row), sessions = [...item.sessions ?? []];
-  if (assigned && item.archived)
-    throw Error("请先恢复这项待办再交办");
-  const previous = sessions.find((link) => link.taskId === input.taskId);
-  if (previous && previous.sessionId !== input.sessionId)
-    throw Error("原任务已关联其他会话，请先核对原会话接续关系");
-  const source = input.source ? { kind: "note", key: "note:" + input.source.noteId, ...input.source } : undefined;
-  const sources = [...item.taskSources ?? []];
-  if (source && !sources.some((old) => old.noteId === source.noteId && old.itemId === source.itemId))
-    sources.push(source);
-  if (!previous)
-    sessions.push({ taskId: input.taskId, sessionId: input.sessionId, title: input.title });
-  const duplicate = !!previous && JSON.stringify(sources) === JSON.stringify(item.taskSources ?? []) && (!assigned || item.status === "in_progress") && assignment === undefined;
-  if (duplicate)
-    return { itemId: row.id, taskId: input.taskId, sessionId: input.sessionId, revision: String(row.revision), duplicate: true };
-  const revision = await saveItem(ctx, { ...item, sessions, taskSources: sources, ...assignment ? { assignment } : {}, ...assigned ? { status: "in_progress", completed: false } : {} }, row.id);
-  await ctx.db.put("sessionIndex", JSON.stringify([input.taskId, row.id]), { taskId: input.taskId, itemId: row.id });
-  await sessionLinked.publish(ctx, { itemId: row.id, title: item.title, taskId: input.taskId, sessionId: input.sessionId, revision });
-  return { itemId: row.id, taskId: input.taskId, sessionId: input.sessionId, revision, duplicate: false };
-}
-var itemSessionSchema = object({ itemId: string2(), title: string2(), status: todoStatusSchema, sessions: array(sessionLinkSchema), archived: boolean2().optional() });
-var sessionItems = note.query({ visibility: "public", description: "分页读取事项与它们关联的会话；不会查询或启动原生执行。", input: pageInput, output: object({ items: array(itemSessionSchema), revision: string2(), next: string2().optional() }) }, async (ctx, input) => {
-  const page = await ctx.db.page("items", { cursor: input.cursor, orderBy: { position: "asc" }, select: ["title", "status", "sessions", "archived"] });
-  return { ...page, items: page.items.map((row) => ({ itemId: row.id, title: row.title, status: row.status, sessions: row.sessions ?? [], ...row.archived === undefined ? {} : { archived: row.archived } })) };
-});
-var sessionTask = note.query({ visibility: "public", description: "由保留的任务身份定位所有相关事项，保留历史多对多关系。", input: object({ taskId: string2() }), output: object({ items: array(itemSessionSchema) }) }, async (ctx, { taskId }) => {
-  const page = await ctx.db.page("sessionIndex", { where: { taskId } });
-  if (page.next)
-    throw Error("该任务关联事项超出单次查询预算");
-  const rows = await Promise.all(page.items.map((index) => ctx.db.get("items", index.itemId)));
-  return { items: rows.flatMap((row) => row ? [{ itemId: row.id, title: row.title, status: row.status, sessions: row.sessions ?? [], ...row.archived === undefined ? {} : { archived: row.archived } }] : []) };
-});
-var sourceMetadata = note.query({ visibility: "private", input: object({ ids: array(string2()).max(25) }), output: array(object({ id: string2(), name: string2(), icon: sourceIconSchema.optional() })) }, async (ctx, { ids }) => (await Promise.all([...new Set(ids)].map((id) => ctx.notes.lookup({ id })))).flat());
-var executionDetails = note.query({ visibility: "public", description: "按事项查看全部关联会话和准确来源。", input: object({ itemId: string2() }), output: object({ sessions: array(sessionLinkSchema), sources: array(displaySourceSchema) }) }, async (ctx, { itemId }) => {
-  const row = await getItem(ctx, itemId), [sources] = await resolveTodoSources(ctx, [row]);
-  return { sessions: row.sessions ?? [], sources };
-});
-var timelineEntrySchema = progressEntrySchema.omit({ conclusionKey: true }).extend({ id: string2(), recordedAt: number2().int().nonnegative().optional() });
-var progressTimeline = note.query({
-  visibility: "private",
-  description: "分页读取真实进展记录，原文保留；没有时间的当前结论不补造时间。",
-  input: pageInput.extend({ itemId: string2() }),
-  output: object({ items: array(timelineEntrySchema), revision: string2(), next: string2().optional() })
-}, async (ctx, input) => {
-  const row = await getItem(ctx, input.itemId);
-  const page = await ctx.db.page("progressEntries", { where: { itemId: input.itemId }, orderBy: { recordedAt: "desc" }, cursor: input.cursor });
-  const entries = [...page.items];
-  if (!input.cursor) {
-    const conclusion = row.conclusion?.trim(), recorded = conclusion ? await ctx.db.page("progressEntries", { where: { itemId: input.itemId, conclusionKey: sha256(progressTextIdentity(conclusion)) }, select: ["summary"] }) : undefined;
-    if (conclusion && !recorded?.items.length && !entries.some((entry) => progressTextIdentity(entry.conclusion) === progressTextIdentity(conclusion)))
-      entries.unshift({
-        id: `current:${input.itemId}`,
-        itemId: input.itemId,
-        source: "current",
-        status: row.status,
-        summary: shortProgressText(conclusion),
-        conclusion: row.conclusion ?? conclusion
-      });
-  }
-  return { items: projectProgressEntries(entries).map((entry) => timelineEntrySchema.parse({ ...entry, summary: shortProgressText(entry.summary) })), revision: `${page.revision}:${row.revision}`, ...page.next ? { next: page.next } : {} };
-});
-var setArchived = note.mutation({ visibility: "private", input: object({ itemId: string2(), archived: boolean2() }), output: object({ revision: string2() }) }, async (ctx, { itemId, archived }) => {
-  const row = await getItem(ctx, itemId);
-  return { revision: await saveItem(ctx, { ...business(row), archived }, itemId) };
-});
 // assignment.ts
 var resultSchema = object({ itemId: string2(), sessionId: string2(), revision: string2(), duplicate: boolean2(), status: todoStatusSchema, jobId: string2().optional() });
 var assignmentKey = (itemId, fingerprint) => `todo-assign:${encodeURIComponent(itemId)}:${fingerprint}`;
@@ -7865,7 +8063,7 @@ var assignSession = note.action({ visibility: "public", objectRef: "/itemId", re
   const taskId = item.taskId ?? `todo-assignment:${ctx.note.id}:${itemId}`;
   if (!ctx.host.agent.prepare)
     throw Error("宿主没有提供会话分配能力");
-  const { sessionId } = await ctx.host.agent.prepare(item.sessionId ? { sessionId: item.sessionId, noteId: ctx.note.id } : { noteId: ctx.note.id, newSession: true, creationRequestId: taskId });
+  const { sessionId } = await ctx.host.agent.prepare(item.sessionId ? { sessionId: item.sessionId, noteId: ctx.note.id } : { noteId: ctx.note.id, newSession: true, creationRequestId: taskId, initialTitle: item.title });
   const requestId = assignmentKey(itemId, item.fingerprint) + ":" + ctx.idempotencyKey;
   const reservation = await ctx.runMutation(assignPreparedSession, { itemId, taskId, sessionId, title: item.title, requestId, fingerprint: item.fingerprint });
   if (!reservation.reserved) {
@@ -7874,12 +8072,14 @@ var assignSession = note.action({ visibility: "public", objectRef: "/itemId", re
   }
   let job;
   try {
-    job = await ctx.jobs.runAgent({ sessionId, noteId: ctx.note.id, requestId, prompt: `用户已点击 Assign，立即处理这一项待办。
+    job = await ctx.jobs.runAgent({ sessionId, noteId: ctx.note.id, requestId, prompt: `这项待办已交办，请处理。
 便笺ID：${ctx.note.id}
 事项ID：${itemId}
 标题：${item.title}
 要求摘录：${(item.description ?? "").slice(0, 6000)}
-本次交办需求版本：${item.fingerprint}。先用该便笺 requirement 查询（itemId 为上述事项ID）读取完整要求与附件，并核对返回 revision 等于该版本；若不一致，停止执行新草稿并报告需求已变化，不自行扩展本次交办。先查看关联点子库，结合制作连线提供的旧灵感向作者推荐；仅将已授权内容实施到游戏仓库。沿用真实身份与现有授权；有实际进展后通过 recordProgress 写回原事项，任务卡只能由用户确认完成；不得自行写 done，也不得调用状态切换或导入接口绕过。认为本次要求已完成时移到 blocking，并在进展中说明待用户 review。不得把本次模型回合结束等同于任务完成。` }, { onComplete: assignmentCompleted });
+本次交办需求版本：${item.fingerprint}。先用该便笺 requirement 查询（itemId 为上述事项ID）读取完整要求与附件，并核对返回 revision 等于该版本；若不一致，停止执行新草稿并报告需求已变化，不自行扩展本次交办。仅处理该事项，沿用真实身份与现有授权；有实际进展后用 workbench 的 action.invoke 写回原事项：设置 method 为 action.invoke，input 为 {noteId:${JSON.stringify(ctx.note.id)},action:"recordProgress",input:{itemId:${JSON.stringify(itemId)},status:实际状态,summary:简短进展,conclusion:实际结果}}；不要使用 note.action。开始执行时写入 in_progress；核实要求已完成且成果已保存后写入 done，在 conclusion 写入成果及可打开的便笺链接。用户只要求草稿时，保存可用草稿即写 done；未发送、待审阅或标明的合理占位不使草稿继续进行，除非用户实际要求后续行动或缺失事实使草稿不可交付。只有真正需要用户行动时才写 blocking；用户可重新打开任务。不得把本次模型回合结束等同于任务完成。若工具返回对外操作确认 proposal，立即结束本次尝试：在 recordProgress 写 blocking，并把 proposal.label、proposal.target 和 proposal.request 原样写入 unblockAction；不要修改参数、重试或自动发送。其他受阻且同桌某张便笺能采取明确下一步时，也可在 unblockAction 中给出按钮名、目标 noteId 和用户可审核的具体请求；不要自动发送。
+
+回答项目、术语或流程问题时，先从知识便笺的公开 resources 查询或已提供的上下文取得已登记入口和根目录，在登记根目录内用原生本地搜索和读取；未登记根目录的入口只读取该入口文件。不复制整个知识库。只有本地搜索没有命中时才查公开资料，并在回答中说明。给用户的最终回复先直接回答结果；通常一两句话即可。引用资料时，对实际查阅的相关项目入口或索引以及支持回答的实质资料分别给出路径和行号范围；资料位于 Git 仓库且可取得提交时给出 commit，存在相关未提交修改时说明。这些是可核对的依据，不是内部标识。实际受阻称「受阻」并说明原因和具体下一步。除非用户主动询问，不复述原始状态值、字段名、坐标、时区、内部标识或工具名。` }, { onComplete: assignmentCompleted });
   } catch (error) {
     await ctx.runMutation(assignmentDispatchUnknown, { itemId, requestId, error: error instanceof Error ? error.message : String(error) });
     throw error;
@@ -7922,8 +8122,8 @@ function normalizeTodoImages(input) {
 }
 var upsertExternalItem = note.mutation({
   visibility: "public",
-  description: "按来源稳定身份创建或更新一项待办；只保存草稿，不自动交办。",
-  input: object({ title: string2(), description: string2().optional(), source: todoItemSourceSchema.pick({ kind: true, itemId: true, taskKey: true, label: true, url: true }) }),
+  description: "按来源稳定身份保存待办草稿，可设置截止日期 dueDate（YYYY-MM-DD 或 YYYY-MM-DDTHH:mm，空字符串清除）。",
+  input: object({ title: string2(), description: string2().optional(), dueDate: string2().optional(), workKind: todoWorkKindSchema.optional(), source: todoItemSourceSchema.pick({ kind: true, itemId: true, taskKey: true, label: true, url: true }) }),
   output: object({ itemId: string2(), revision: string2(), created: boolean2(), updated: boolean2() }),
   objectRef: "/itemId",
   revision: "/revision"
@@ -7958,7 +8158,7 @@ var requestDelegation = note.mutation({
 var recordProgress = note.mutation({
   visibility: "public",
   description: "将已核验任务的实际进展和结论写回原待办。",
-  input: object({ itemId: string2(), status: todoStatusSchema, conclusion: string2().optional(), summary: string2().optional(), expectedRevision: string2().optional() }),
+  input: object({ itemId: string2(), status: todoStatusSchema, conclusion: string2().optional(), summary: string2().optional(), expectedRevision: string2().optional(), unblockAction: unblockProposalSchema.optional() }),
   output: object({ itemId: string2(), status: todoStatusSchema, revision: string2(), duplicate: boolean2() }),
   objectRef: "/itemId",
   revision: "/revision"
@@ -7966,11 +8166,13 @@ var recordProgress = note.mutation({
   const row = await getItem(ctx, input.itemId), item2 = business(row);
   if (input.expectedRevision && input.expectedRevision !== String(row.revision))
     throw new Error("待办版本已变化，请重新读取");
-  if (input.status === "done" && row.status !== "done")
-    throw new Error("只有用户可以确认任务完成；请移到 blocking 并记录待用户 review 的成果");
   const conclusion = input.conclusion?.trim();
-  const next = { ...item2, status: input.status, completed: input.status === "done", ...conclusion ? { conclusion } : {} };
-  if (sameProgress(item2, next))
+  if (input.unblockAction && input.status !== "blocking")
+    throw Error("解除阻塞操作只能用于阻塞中的待办");
+  const unblockAction = input.status === "blocking" ? unblockForProgress(item2, input.unblockAction, ctx.note.id, String(row.revision)) : undefined;
+  const { unblockAction: _oldAction, ...withoutAction } = item2;
+  const next = { ...withoutAction, status: input.status, completed: input.status === "done", ...conclusion ? { conclusion } : {}, ...unblockAction ? { unblockAction } : {} };
+  if (sameProgress(item2, next) && JSON.stringify(item2.unblockAction ?? null) === JSON.stringify(unblockAction ?? null))
     return { itemId: row.id, status: row.status, revision: String(row.revision), duplicate: true };
   const revision = await saveItem(ctx, next, row.id);
   await appendProgress(ctx, next, revision, "recordProgress", { summary: input.summary, conclusion });
@@ -7988,6 +8190,7 @@ var addTodo = note.action({
     priority: todoPrioritySchema.optional(),
     category: string2().optional(),
     status: todoStatusSchema.optional(),
+    workKind: todoWorkKindSchema.optional(),
     startDate: string2().optional(),
     dueDate: string2().optional(),
     images: array(todoImageSchema).optional(),
@@ -8007,7 +8210,8 @@ var addTodo = note.action({
     status,
     completed: status === "done",
     priority: input.priority ?? "medium",
-    category: input.category?.trim() || "日常",
+    category: input.category?.trim() || DEFAULT_CATEGORY,
+    ...input.workKind ? { workKind: input.workKind } : {},
     startDate: input.startDate,
     dueDate: input.dueDate,
     createdAt: new Date().toISOString(),
@@ -8036,24 +8240,15 @@ var clearCompleted = note.mutation({ output: revisionOutputSchema.extend({ pendi
 });
 var listPageSchema = object({ items: array(todoListItemSchema), revision: string2(), next: string2().optional() });
 var itemPage = note.query({
-  description: "分页读取待办摘要；分类和状态使用原生索引，搜索标题、制作要求、结论与来源，跳过空页。",
+  description: "分页读取待办摘要；分类和状态使用原生索引，标题搜索在当前页匹配，空页有next须继续。",
   input: todoFilterSchema.merge(pageInput).extend({ status: todoStatusSchema.optional(), active: boolean2().optional(), archived: boolean2().optional() }),
   output: listPageSchema,
   revision: "/revision"
 }, async (ctx, input) => {
   const where = { archived: input.archived ?? false, ...input.category ? { category: input.category } : {}, ...input.status ? { status: input.status } : {}, ...input.active ? { active: true } : {} };
-  const tokens = (input.search || "").normalize("NFKC").toLowerCase().trim().split(/\s+/).filter(Boolean);
-  let cursor = input.cursor;
-  for (;; ) {
-    const page = await ctx.db.page("items", { where, orderBy: { position: "asc" }, select: ["view", "taskSources", "source", "description", "conclusion"], cursor });
-    const matches = tokens.length ? page.items.filter((row) => {
-      const text = [row.id, row.view.title, row.description, row.conclusion, row.view.category, row.view.sourceLabel, row.source?.label, ...(row.taskSources || []).map((s) => s.name)].filter(Boolean).join(" ").normalize("NFKC").toLowerCase();
-      return tokens.every((t) => text.includes(t));
-    }) : page.items;
-    if (matches.length || !page.next)
-      return { ...page, items: await projectTodoRows(ctx, matches) };
-    cursor = page.next;
-  }
+  const page = await ctx.db.page("items", { where, orderBy: { position: "asc" }, select: ["view", "taskSources", "source"], cursor: input.cursor });
+  const needle = input.search?.trim().toLocaleLowerCase();
+  return { ...page, items: (await projectTodoRows(ctx, page.items)).filter((item2) => !needle || item2.title.toLocaleLowerCase().includes(needle)) };
 });
 var categories = note.query({
   visibility: "private",
@@ -8152,22 +8347,43 @@ var items = note.query({ visibility: "public", description: "读取全部待办�
   const row = await getItem(ctx, input.itemId);
   return { item: business(row), revision: String(row.revision) };
 });
-var installExampleWork = note.mutation({ visibility: "private", output: _null3() }, async (ctx) => {
-  if (!(await ctx.config.read()).includeExampleWork)
-    return null;
-  if (!(await ctx.db.page("items", { select: [] })).items.length) {
-    const examples = [
-      ["guardian-support", "调整守关者增援", "确认封印守关者第四回合的增援，比较不同起手的生存空间。", "in_progress", "战斗"],
-      ["bell-dialogue", "补狐爷爷对白", "在桥下的倒铃两条分支里，核对狐爷爷给出的山路提示。", "blocking", "剧情"],
-      ["jade-map-events", "完善青玉洞地图事件", "给山腰古祠补一次搜刮选择，再核对它和青玉洞的路线连接。", "todo", "探索"],
-      ["return-rope-icon", "制作归返绳图标", "为山中杂货铺的归返绳准备能在小尺寸下辨认的图标。", "todo", "美术"]
-    ];
-    for (const [index, [id, title, description, status, category]] of examples.entries()) {
-      await saveItem(ctx, { id, title, description, status, category, createdAt: "2026-10-31T02:30:00.000Z" }, id, ["A", "B", "C", "D"][index], false);
-    }
+var sessionStarted = note.mutation({
+  visibility: "private",
+  input: object({ itemId: string2(), sessionId: string2(), expectedRevision: string2() }),
+  output: object({ moved: boolean2() })
+}, async (ctx, input) => {
+  const row = await ctx.db.get("items", input.itemId);
+  if (!row || String(row.revision) !== input.expectedRevision || row.archived || row.status === "done" || row.status === "in_progress" || !(row.sessions ?? []).some((session) => session.sessionId === input.sessionId && !session.archived))
+    return { moved: false };
+  await saveItem(ctx, { ...business(row), status: "in_progress", completed: false }, input.itemId);
+  return { moved: true };
+});
+var sessionActivityPage = note.query({
+  visibility: "private",
+  input: object({ itemIds: array(string2()).max(400) }),
+  output: object({ runningItemIds: array(string2()) })
+}, async (ctx, { itemIds }) => {
+  const items2 = [];
+  for (const id of new Set(itemIds)) {
+    const row = await ctx.db.get("items", id);
+    items2.push({ id, sessionIds: (row?.sessions ?? []).filter((link) => !link.archived).map((link) => link.sessionId) });
   }
-  await ctx.config.update({ includeExampleWork: false });
-  return null;
+  const ids = [...new Set(items2.flatMap((item2) => item2.sessionIds))].sort();
+  const running = new Set;
+  for (let offset = 0;offset < ids.length; offset += 100) {
+    const snapshot = await ctx.resources.read({ name: "extension.session-activity.live", input: { sessionIds: ids.slice(offset, offset + 100) } });
+    if (snapshot.error || !snapshot.data)
+      throw Error(snapshot.error ?? "对话状态尚未就绪");
+    const sessions = array(object({ id: string2(), status: string2() })).parse(snapshot.data);
+    for (const session of sessions)
+      if (session.status === "running")
+        running.add(session.id);
+  }
+  return { runningItemIds: items2.filter((item2) => item2.sessionIds.some((id) => running.has(id))).map((item2) => item2.id) };
+});
+var unblockRequest = note.query({ visibility: "private", input: object({ itemId: string2() }), output: unblockActionSchema.nullable() }, async (ctx, { itemId }) => {
+  const row = await ctx.db.get("items", itemId);
+  return row && row.status === "blocking" && !row.archived ? row.unblockAction ?? null : null;
 });
 
 var SAVED_IMAGE_LIMITS = Object.freeze({ bytes: 512 * 1024, totalBytes: 2 * 1024 * 1024, count: 8, dimension: 1600 });

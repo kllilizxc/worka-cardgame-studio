@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "name": "剧情知识库",
-  "scenarios": "查阅游戏剧情原文、分支和关联记录。",
+  "scenarios": "实时阅读与直接编辑游戏剧情原稿、章节分支和关联记录。",
   "icon": {
     "type": "svg",
     "path": "icon.svg",
@@ -18,7 +18,6 @@
     "model.ts",
     "package.json",
     "reader.tsx",
-    "state.ts",
     "story-tree.ts",
     "story.css",
     "view-compact.tsx",
@@ -29,22 +28,21 @@
   "prerequisites": [
     {
       "name": "extension.game-project.status",
-      "connection": "game",
-      "optional": true
+      "connection": "game"
     }
   ],
   "onboarding": {
-    "title": "连接游戏仓库",
-    "description": "连接后，本桌面的游戏便笺会读取同一份 CardGame 项目。",
+    "title": "选择要绑定的卡牌游戏仓库",
+    "description": "本桌面的所有内容便笺共用同一份游戏检出，实时读取并在各自范围内直接编辑。",
     "steps": [
-      "共享设置对话只需收集一次来源，可选择本机的游戏仓库目录或 GitHub HTTPS 地址。使用 extension.invoke 调用 game-project 的 bind 方法，input.source 为选定的目录或地址。"
+      "只问用户一个问题来确认游戏来源：默认使用 https://github.com/kllilizxc/CardGame（自动克隆），或选择本机已检出的 CardGame 目录；然后调用 extension.invoke({extension:\"game-project\",method:\"bind\",input:{source}})。"
     ],
     "locales": {
       "en": {
-        "title": "Connect the game repository",
-        "description": "The game notes on this desktop read from the same CardGame project.",
+        "title": "Choose the card game repository",
+        "description": "All content notes on this desktop read live from and edit their own part of the bound checkout.",
         "steps": [
-          "In the shared setup conversation, choose the local game checkout or its GitHub HTTPS URL once. Use extension.invoke with extension game-project, method bind and input.source set to the chosen path or URL."
+          "Ask one question to choose the game source (default https://github.com/kllilizxc/CardGame, cloned automatically, or a local CardGame directory), then call extension.invoke({extension:\"game-project\",method:\"bind\",input:{source}})."
         ]
       }
     }

@@ -1,11 +1,12 @@
-import { z } from '@dsh-workbench/runtime';
+import { z } from '@realiz3r/worka-runtime';
 import { type WriteContext } from './state';
-export declare const sessionLinked: Readonly<import("@dsh-workbench/runtime").NoteEvent<z.ZodObject<{
+export declare const sessionLinked: Readonly<import("@realiz3r/worka-runtime").NoteEvent<z.ZodObject<{
     itemId: z.ZodString;
     title: z.ZodString;
     taskId: z.ZodString;
     sessionId: z.ZodString;
     revision: z.ZodString;
+    workKind: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>>>;
 declare const sessionIdentity: z.ZodObject<{
     itemId: z.ZodString;
@@ -17,7 +18,7 @@ declare const sessionIdentity: z.ZodObject<{
         itemId: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
 }, z.core.$strip>;
-export declare const linkSession: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const linkSession: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     taskId: z.ZodString;
     sessionId: z.ZodString;
@@ -41,7 +42,7 @@ export declare function saveSessionLink(ctx: WriteContext, input: z.output<typeo
     revision: string;
     duplicate: boolean;
 }>;
-export declare const sessionItems: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const sessionItems: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     cursor: z.ZodOptional<z.ZodString>;
 }, z.core.$strict>, z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
@@ -64,7 +65,7 @@ export declare const sessionItems: import("@dsh-workbench/runtime").NoteOperatio
     revision: z.ZodString;
     next: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, "query">;
-export declare const sessionTask: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const sessionTask: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     taskId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     items: z.ZodArray<z.ZodObject<{
@@ -85,7 +86,7 @@ export declare const sessionTask: import("@dsh-workbench/runtime").NoteOperation
         archived: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strip>>;
 }, z.core.$strip>, "query">;
-export declare const sourceMetadata: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const sourceMetadata: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     ids: z.ZodArray<z.ZodString>;
 }, z.core.$strip>, z.ZodArray<z.ZodObject<{
     id: z.ZodString;
@@ -99,7 +100,7 @@ export declare const sourceMetadata: import("@dsh-workbench/runtime").NoteOperat
         monochrome: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strip>]>>;
 }, z.core.$strip>>, "query">;
-export declare const executionDetails: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const executionDetails: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     sessions: z.ZodArray<z.ZodObject<{
@@ -129,7 +130,7 @@ export declare const executionDetails: import("@dsh-workbench/runtime").NoteOper
         url: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
 }, z.core.$strip>, "query">;
-export declare const progressTimeline: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const progressTimeline: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     cursor: z.ZodOptional<z.ZodString>;
     itemId: z.ZodString;
 }, z.core.$strict>, z.ZodObject<{
@@ -157,9 +158,16 @@ export declare const progressTimeline: import("@dsh-workbench/runtime").NoteOper
     revision: z.ZodString;
     next: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, "query">;
-export declare const setArchived: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const setArchived: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     archived: z.ZodBoolean;
+}, z.core.$strip>, z.ZodObject<{
+    revision: z.ZodString;
+}, z.core.$strip>, "mutation">;
+export declare function announceChangeSessions(ctx: WriteContext, item: import('./model').TodoItem, revision: string): Promise<void>;
+/** Expanding an answer into a change must reannounce existing sessions to delivery consumers. */
+export declare const markChangeWork: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
+    itemId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     revision: z.ZodString;
 }, z.core.$strip>, "mutation">;

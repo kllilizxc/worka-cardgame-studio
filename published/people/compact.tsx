@@ -3,7 +3,6 @@ import {useLinks,useMutation,useNote} from '@dsh-workbench/react';
 import {noteHref} from '@dsh-workbench/runtime/view';
 import {SymbolIcon,type Kind,catalogKind} from './visual';
 import type {RecordRow} from './model';
-import {getMedia} from './media';
 import './compact.css';
 
 type Open=(id?:string,section?:string,line?:number)=>void;
@@ -13,17 +12,11 @@ const rotation=[-16.5,-10.5,-3.1,5.7,12.2,17];
 const spacing=[-2.24,-1.46,-.48,.5,1.45,2.25];
 const depth=[2,.85,0,.75,1.5,2.1];
 function Header({name,kind,count,right,open}:{name:string;kind:Kind;count?:number;right?:ReactNode;open:Open}){
-  return <header className="atlas-header"><button aria-label={name} onClick={()=>open()}><SymbolIcon name={kind}/><span className="atlas-title-label">{name}</span></button>{right||<button className="atlas-more" aria-label={'打开'+name} onClick={()=>open()}>{count} ›</button>}</header>;
+  return <header className="atlas-header"><button aria-label={name} onClick={()=>open()}><SymbolIcon name={kind}/><span className="atlas-title-label">{name}</span></button>{right||<button className="atlas-more" aria-label={'打开'+name} onClick={()=>open()}>{count??'—'} ›</button>}</header>;
 }
 function ArtImage({row}:{row:Pick<RecordRow,'mediaKey'|'thumbnail'|'mediaUrl'>}){
   const note=useNote<typeof import('./actions')>(),asset=note.useQuery('asset',{key:row.mediaKey||''},{enabled:!!row.mediaKey});
-  const [image,setImage]=useState<{key:string;src:string|null}>();
-  useEffect(()=>{
-    const key=row.mediaKey;if(!key)return;
-    let live=true;getMedia(key).then(src=>{if(live)setImage({key,src});}).catch(()=>{});
-    return ()=>{live=false;};
-  },[row.mediaKey]);
-  const src=asset.data||(image?.key===row.mediaKey?image?.src:undefined)||row.thumbnail||row.mediaUrl;
+  const src=asset.data||row.thumbnail||row.mediaUrl;
   return src?<img alt="" draggable={false} src={src}/>:<span className="atlas-empty-art">◇</span>;
 }
 function Hand({records,open}:{records:RecordRow[];open:Open}){
@@ -58,11 +51,12 @@ function eventLabel(line:string){
 }
 function Encounter({row,open}:{row:RecordRow;open:Open}){
   const {navigation}=useNote(),navigate=useMutation(),links=useLinks(row.id),refs=row.refs.filter(r=>r.note==='monsters');
+  const allLinks=[...(row.links||[]),...links.links];
   const units=lines(row,'敌方阵位'),events=lines(row,'特殊事件').slice(0,5).map(eventLabel);
   const reinforcement=events.find(e=>e.label.includes('增援')||e.kind==='增援');
   return <><div className="atlas-battle-title"><button onClick={()=>open(row.id)}>{row.title}</button><small>{field(row,'难度')?'难度 '+field(row,'难度'):row.group}</small>{reinforcement&&<small className="red">{reinforcement.turn?'回合 '+reinforcement.turn+' · ':''}增援</small>}</div>
     <div className="atlas-lineup">{units.slice(0,3).map((line,i)=>{
-      const parts=line.split(' · '),name=parts[1]||line,id=refs[i]?.id,link=links.links.find(l=>l.target.recordId===id);
+      const parts=line.split(' · '),name=parts[1]||line,id=refs[i]?.id,link=allLinks.find(l=>l.target.recordId===id);
       const portrait=row.portraits?.find(item=>item.id===id);
       return <button key={i} title={line} onClick={()=>link?void navigate.run(()=>navigation.open(link.target)):open(row.id)}><span>{portrait?.mediaKey&&<ArtImage row={portrait}/>}<small>{parts[0]}</small></span><b>{name}</b></button>;
     })}<button className="atlas-reserve" onClick={()=>open(row.id,'敌方阵位',0)}><span>◇</span><b>阵位图</b></button></div>
@@ -81,7 +75,7 @@ function AudioSample({row,open}:{row:RecordRow;open:Open}){
     const el=player.current;if(!el)return;
     if(!el.paused){el.pause();return;}
     try{
-      const url=asset.data||(row.mediaKey&&await getMedia(row.mediaKey))||row.mediaUrl;
+      const url=asset.data||row.mediaUrl;
       if(!url||!mounted.current)return;
       if(el.getAttribute('src')!==url)el.src=url;
       await el.play();if(mounted.current)setFailed(false);
@@ -105,9 +99,10 @@ export default function Compact(){
     void target.run(()=>note.navigation.open({href:noteHref(note.metadata.id,path)+search}));
   };
   const deck=kind==='cards'&&row?.group==='牌组'?row:undefined;
-  return <section className={'atlas-panel atlas-'+kind}><Header kind={kind} name={note.metadata.name} count={query.data?.count} open={open}
+  const unbound=!query.loading&&query.data?.configured===false;
+  return <section className={'atlas-panel atlas-'+kind}><Header kind={kind} name={note.metadata.name} count={query.data?.configured?query.data.count:undefined} open={open}
     right={deck?<button className="atlas-more" onClick={()=>open(deck.id)}>{deck.title} · {field(deck,'总张数')} 张 ›</button>:undefined}/>
-    {!row?<p className="atlas-summary">{query.error?'内容暂未载入':query.loading?'读取中…':'暂无内容'}</p>:kind==='cards'?<Hand records={rows} open={open}/>:kind==='map'?<Atlas row={row} open={open}/>:kind==='encounter'?<Encounter row={row} open={open}/>:kind==='media'?<Media records={rows} open={open}/>:<Specimen records={rows} kind={kind} open={open}/>}
+    {unbound?<p className="atlas-summary"><button type="button" onClick={()=>void target.run(()=>note.host.openSetup())}>连接游戏仓库 →</button></p>:!row?<p className="atlas-summary">{query.error?'内容暂未载入':query.loading?'读取中…':'暂无内容'}</p>:kind==='cards'?<Hand records={rows} open={open}/>:kind==='map'?<Atlas row={row} open={open}/>:kind==='encounter'?<Encounter row={row} open={open}/>:kind==='media'?<Media records={rows} open={open}/>:<Specimen records={rows} kind={kind} open={open}/>}
     {target.error&&<small role="alert">{target.error.message}</small>}
   </section>;
 }

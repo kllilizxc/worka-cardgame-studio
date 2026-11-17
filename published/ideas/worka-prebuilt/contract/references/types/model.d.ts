@@ -25,6 +25,4 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{
         }, z.core.$strip>;
         readonly indexes: readonly [readonly ["updatedAt"], readonly ["category", "updatedAt"]];
     };
-}, z.ZodObject<{
-    includeExampleWork: z.ZodOptional<z.ZodBoolean>;
-}, z.core.$strip>>;
+}, undefined>;

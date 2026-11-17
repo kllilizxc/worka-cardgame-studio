@@ -1,7 +1,7 @@
 import type { RouteObject } from 'react-router';
 import { Link, useLocation } from 'react-router';
-import { noteHref } from '@dsh-workbench/runtime';
-import { useNote } from '@dsh-workbench/react';
+import { noteHref } from '@realiz3r/worka-runtime';
+import { useNote } from '@realiz3r/worka-react';
 import TodoLayout from './todo-layout';
 import { TaskLayout, TaskDetails, TaskEditor, TaskHistory } from './task-dialog';
 import { ui } from './messages';

@@ -1,6 +1,6 @@
-import { z } from '@dsh-workbench/runtime';
+import { z } from '@realiz3r/worka-runtime';
 import { displaySourceSchema, type TodoItem } from './model';
-import type { NoteQueryContext } from '@dsh-workbench/runtime';
+import type { NoteQueryContext } from '@realiz3r/worka-runtime';
 import type { note } from './model';
 /** A list never inherits arbitrary integration payloads or attachment bytes. */
 export declare const todoListItemSchema: z.ZodObject<{

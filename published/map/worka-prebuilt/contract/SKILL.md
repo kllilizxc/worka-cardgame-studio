@@ -1,8 +1,9 @@
 ---
 name: cardgame-catalog
-description: 在 CardGame 工作树中查找并维护秘境、战斗、卡牌、人物、商店与素材索引。
+description: 实时分页浏览秘境、战斗、卡牌、怪物、人物、商店与素材，并在本便笺范围内直接编辑游戏源文件并提交到 main。
 ---
 
-# 游戏内容库
+分页查找用 `collection`，单条记录用 `record({id})`（读取字段、实时引用与游戏内 `source` 文件及 JSON Pointer）；优先查看上下文中的 `note.recordTarget` 获取当前打开的记录。
 
-阅读或查找用 collection，按稳定 ID 用 record。source 给出游戏工作树的文件与 JSON Pointer，refs 给出源数据里的引用。修改原文在已绑定的 CardGame 工作树进行，改动经检查后，在桌面对话用 game-project 的 refresh 重新投影当前工作树。所有内容库消费同一连接。通过资源详情中的 Worka links 跳到相关对象。复杂内容修改和制作要求使用当前便笺的 Worka 对话。
+- 属于本便笺自身内容的修改：在已绑定的 CardGame 检出中直接编辑 `source` 指向的源文件，运行游戏的数据检查与构建（`bun test src/game/content/contentCatalog.test.ts src/game/content/contentDisplayNames.test.ts src/game/types/prototypeExpeditionContent.test.ts` 与 `bun run build-nolog`），通过后直接 `git add` 并 `git commit` 到 `main` 分支，使工作区保持干净（避免与制作待办分支合入冲突）。`game-project` 会自动通知已打开便笺实时更新，无需任何刷新命令。
+- 超出本便笺部分的跨模块请求：按「内容便笺 → 制作」连线在「制作待办」创建 `workKind: "change"` 的事项，用 `connection.bindingLink` 和 `linkSession` 关联当前记录并启动制作会话。

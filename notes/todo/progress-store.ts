@@ -1,7 +1,7 @@
 import type { WriteContext } from './state';
 import type { TodoItem } from './model';
 import { normalizeStatus } from './model';
-import { sha256 } from '@dsh-workbench/runtime';
+import { sha256 } from '@realiz3r/worka-runtime';
 import { progressTextIdentity, shortProgressText } from './progress';
 
 /** Called inside the same native mutation as saveItem; a failed append rolls both back. */

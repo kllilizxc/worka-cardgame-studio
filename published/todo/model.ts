@@ -1,7 +1,10 @@
-import { defineNote, z } from '@dsh-workbench/runtime';
+import { defineNote, z } from '@realiz3r/worka-runtime';
 import { attachmentsSchema } from './attachment-schema';
 
 export const todoStatusSchema = z.enum(['todo', 'in_progress', 'blocking', 'done']);
+export const unblockProposalSchema = z.object({label:z.string().trim().min(1).max(120),target:z.object({noteId:z.string().min(1)}),request:z.string().min(1)});
+export const unblockActionSchema = unblockProposalSchema.extend({requestId:z.string().min(1)});
+export const todoWorkKindSchema = z.enum(['answer', 'change']);
 export const todoPrioritySchema = z.enum(['low', 'medium', 'high']);
 export const progressSourceSchema = z.enum(['recordProgress', 'feedback', 'current']);
 export const progressEntrySchema = z.object({
@@ -33,7 +36,8 @@ export const sourceIconSchema = z.union([
 export const displaySourceSchema = taskSourceSchema.extend({ icon: sourceIconSchema.optional(), url: z.string().optional() });
 export const todoItemSchema = z.looseObject({
   assignment:z.object({requestId:z.string(),fingerprint:z.string(),sessionId:z.string(),phase:z.enum(['reserved','queued','completed','failed','unknown']),jobId:z.string().optional(),error:z.string().optional()}).optional(),
-  id: z.string(), sessions: z.array(sessionLinkSchema).optional(), taskSources: z.array(taskSourceSchema).optional(), archived: z.boolean().optional(), title: z.string(), description: z.string().optional(),
+  workKind: todoWorkKindSchema.optional(), unblockAction: unblockActionSchema.optional(),
+  id: z.string(), featureId:z.string().optional(), sessions: z.array(sessionLinkSchema).optional(), taskSources: z.array(taskSourceSchema).optional(), archived: z.boolean().optional(), title: z.string(), description: z.string().optional(),
   status: todoStatusSchema, createdAt: z.string(), completed: z.boolean().optional(),
   priority: todoPrioritySchema.optional(), category: z.string().optional(), startDate: z.string().optional(), dueDate: z.string().optional(),
   images: z.array(todoImageSchema).optional(), attachments: attachmentsSchema.optional(), source: todoItemSourceSchema.optional(),
@@ -48,6 +52,7 @@ export const todoItemSchema = z.looseObject({
 });
 // Historical items may only have the completed flag and no creation timestamp.
 export const storedTodoItemSchema = todoItemSchema.extend({
+  workKind: z.string().min(1).max(64).optional(),
   status: z.union([todoStatusSchema, z.literal('blocked')]).optional(), createdAt: z.string().optional(),
 });
 export const todoDataSchema = z.looseObject({
@@ -61,7 +66,6 @@ export const todoSnapshotSchema = z.object({
 export const revisionOutputSchema = z.object({ revision: z.string() });
 
 export const todoConfigSchema = z.looseObject({
-  includeExampleWork: z.boolean().optional(),
   filter: z.enum(['all', 'active', 'completed']).optional(),
 });
 
@@ -83,6 +87,8 @@ export function normalizeStatus(item: { status?: string; completed?: boolean }):
 export const countsSchema = z.object({ todo: z.number(), in_progress: z.number(), blocking: z.number(), done: z.number() });
 const summarySchema = z.object({ total: z.number(), attachmentCount: z.number(), counts: countsSchema, revision: z.number(), name: z.string(), firstPosition: z.string().optional() });
 export const note = defineNote({
+  records: [{collection:'items',id:'/id',route:{path:'/tasks/:itemId',param:'itemId'},label:'/title',aliases:['/taskId','/view/taskId',{items:'/sessions',id:'/taskId'}],session:'/view/primarySessionId',links:[{noteId:'/delegation/deskNoteId',recordId:'/delegation/id'}],identities:[{namespace:'feature',value:'/featureId'}]}],
+
   config: { schema: todoConfigSchema, defaults: {} },
   collections: {
     items: { schema: storedTodoItemSchema.omit({ id: true }).extend({

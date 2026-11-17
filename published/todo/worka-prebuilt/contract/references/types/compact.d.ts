@@ -1,2 +1,2 @@
-import './tile.css';
-export default function Compact(): import("react").JSX.Element;
+import React from 'react';
+export default function Compact(): React.JSX.Element;

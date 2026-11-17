@@ -1,50 +1,76 @@
 import {z} from '@dsh-workbench/runtime';
-import {indexSchema,kindSchema,note,recordSchema} from './model';
-import {search} from './search';
-import {homeRecords} from './home';
+import {configSchema,kindSchema,note,recordSchema} from './model';
 export {note} from './model';
-export const projectIndex=note.query({visibility:'private',description:'当前工作树的索引；首次连接前可查看发行样例。',output:indexSchema},readIndex);
-async function readIndex(ctx:import('@dsh-workbench/runtime').NoteQueryContext<typeof note>){
-  const config=indexSchema.parse({kind:'cards',records:[],revision:'',...await ctx.config.read()});
-  if(!config.connections?.game)return config;
-  const snap=await ctx.resources.read({name:'extension.game-project.index',connection:'game',input:{}});
+
+async function readCatalog<T>(ctx:import('@dsh-workbench/runtime').NoteQueryContext<typeof note>,input:Record<string,unknown>):Promise<T|null>{
+  const config=configSchema.parse({kind:'cards',...await ctx.config.read()});
+  if(!config.connections?.game)return null;
+  const snap=await ctx.resources.read<T|null>({name:'extension.game-project.catalog',connection:'game',input:input as import('@dsh-workbench/runtime').JsonValue});
   if(snap.error)throw Error(snap.error);
-  return snap.data==null?config:indexSchema.parse(snap.data);
+  return snap.data??null;
 }
-export const asset=note.query({visibility:'private',description:'读取已连接游戏中的实际素材。',input:z.object({key:z.string()}),output:z.string().nullable()},async(ctx,input)=>{
+
+export const asset=note.query({visibility:'private',description:'读取已绑定游戏中的实际素材。',input:z.object({key:z.string()}),output:z.string().nullable()},async(ctx,input)=>{
   const config=await ctx.config.read();
   if(!config.connections?.game)return null;
   const snap=await ctx.resources.read<string|null>({name:'extension.game-project.asset',connection:'game',input});
   if(snap.error)throw Error(snap.error);
   return snap.data??null;
 });
+
 const criteria=z.object({facetQuery:z.string().max(512).optional(),q:z.string().max(1000).optional(),filters:z.record(z.string(),z.array(z.string())).optional(),page:z.number().int().positive().optional(),sort:z.enum(['default','name']).optional()});
 const summary=z.object({id:z.string(),title:z.string(),group:z.string(),body:z.string(),thumbnail:z.string().nullable(),mediaKey:z.string().nullable(),summary:z.string()});
+const pageOutput=z.object({
+  configured:z.boolean(),
+  total:z.number(),count:z.number(),page:z.number(),pages:z.number(),
+  items:z.array(summary),
+  facets:z.array(z.object({key:z.string(),hasMore:z.boolean(),options:z.array(z.object({value:z.string(),count:z.number()}))})),
+});
+
 export const collection=note.query({
-  description:'全库搜索卡牌游戏记录，按多个分类筛选，返回分页摘要和分类计数。',input:criteria,
-  output:z.object({total:z.number(),count:z.number(),page:z.number(),pages:z.number(),items:z.array(summary),facets:z.array(z.object({key:z.string(),hasMore:z.boolean(),options:z.array(z.object({value:z.string(),count:z.number()}))}))}),
-},async(ctx,input)=>search((await readIndex(ctx)).records||[],input));
-export const home = note.query({visibility:'private',description:'桌面首页的当前内容和进度。',input:z.object({}),
-  output:z.object({kind:kindSchema,count:z.number(),records:z.array(recordSchema)})},async ctx=>{
-  const config=await readIndex(ctx);
-  return homeRecords(config.kind,config.records);
+  description:'按本便笺所属类别分页搜索游戏记录，返回当前页摘要和筛选项计数。',
+  input:criteria,
+  output:pageOutput,
+},async(ctx,input)=>{
+  const data=await readCatalog<Omit<z.infer<typeof pageOutput>,'configured'>>(ctx,{op:'page',...input});
+  if(!data)return {configured:false,total:0,count:0,page:1,pages:1,items:[],facets:[]};
+  return {...pageOutput.omit({configured:true}).parse(data),configured:true};
 });
-export const overview=note.query({description:'桌面便笺摘要。',output:z.object({count:z.number(),items:z.array(z.string())})},async ctx=>{
-  const rows=(await readIndex(ctx)).records||[];return {count:rows.length,items:rows.slice(0,3).map(r=>r.title)};
+
+export const recordsPage=note.query({
+  description:'按游标分页列出本便笺记录身份与标题。',
+  input:z.object({cursor:z.string().optional()}),
+  output:z.object({items:z.array(z.object({id:z.string(),title:z.string()})),next:z.string().optional()}),
+},async(ctx,input)=>{
+  const data=await readCatalog<{items:{id:string;title:string}[];next?:string}>(ctx,{op:'cursor',...(input.cursor?{cursor:input.cursor}:{})});
+  return data?{items:data.items,...(data.next?{next:data.next}:{})}:{items:[]};
 });
-export const record=note.query({description:'按稳定 ID 读取字段、引用与游戏文件中的具体路径。',input:z.object({id:z.string()}),output:recordSchema.nullable()},
-  async(ctx,{id})=>(await readIndex(ctx)).records?.find(r=>r.id===id)||null);
-export const indexRevision=note.query({description:'读取当前游戏索引版本，供刷新时核对。',output:z.object({revision:z.string()})},async ctx=>({revision:(await readIndex(ctx)).revision||''}));
-export const replaceIndex=note.mutation({
-  visibility:'public',description:'将此库原子更新为指定游戏工作树重新生成的索引。先读取 indexRevision，再传 expectedRevision。',
-  input:indexSchema.omit({connections:true}).extend({expectedRevision:z.string()}),output:z.object({revision:z.string(),count:z.number()})
-},async(ctx,{expectedRevision,...next})=>{
-  const current=await ctx.config.read();
-  if(next.kind!==current.kind)throw new Error('便笺类型不匹配');
-  if(current.revision!==next.revision){
-    if((current.revision||'')!==expectedRevision)throw new Error('索引已更新，请重读版本');
-    if(new Set(next.records.map(r=>r.id)).size!==next.records.length)throw new Error('索引包含重复 ID');
-    await ctx.config.update(next);
-  }
-  return {revision:next.revision,count:next.records.length};
+
+export const home=note.query({
+  visibility:'private',
+  description:'读取桌面紧凑卡片所需的当前内容。',
+  input:z.object({}),
+  output:z.object({configured:z.boolean(),kind:kindSchema,count:z.number(),records:z.array(recordSchema)}),
+},async ctx=>{
+  const config=configSchema.parse({kind:'cards',...await ctx.config.read()});
+  const data=await readCatalog<{kind:z.infer<typeof kindSchema>;count:number;records:z.infer<typeof recordSchema>[]}>(ctx,{op:'home'});
+  if(!data)return {configured:false,kind:config.kind,count:0,records:[]};
+  return {configured:true,kind:kindSchema.parse(data.kind),count:data.count,records:z.array(recordSchema).parse(data.records)};
+});
+
+export const overview=note.query({
+  description:'读取本便笺的记录数与前三条标题。',
+  output:z.object({count:z.number(),items:z.array(z.string())}),
+},async ctx=>{
+  const data=await readCatalog<{count:number;items:string[]}>(ctx,{op:'overview'});
+  return data??{count:0,items:[]};
+});
+
+export const record=note.query({
+  description:'按稳定 ID 实时读取单条记录的字段、引用与游戏源文件路径。',
+  input:z.object({id:z.string()}),
+  output:recordSchema.nullable(),
+},async(ctx,{id})=>{
+  const data=await readCatalog<unknown>(ctx,{op:'record',id});
+  return data?recordSchema.parse(data):null;
 });

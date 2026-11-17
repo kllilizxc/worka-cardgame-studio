@@ -10,7 +10,7 @@ type RowStatus = Pick<SurfaceStatus, 'phase' | 'url' | 'pass' | 'since' | 'updat
     verified?: {
         ok: boolean;
     };
-    failure?: Pick<NonNullable<SurfaceStatus['failure']>, 'step' | 'handling'>;
+    failure?: Pick<NonNullable<SurfaceStatus['failure']>, 'step'>;
 };
 type RowCandidate = Pick<CandidateSpec, 'key' | 'title' | 'surfaces' | 'desired'> & {
     status?: Record<string, RowStatus>;
@@ -27,7 +27,7 @@ export declare function previewRows<C extends RowCandidate>(data: {
     candidates: C[];
 }): PreviewRow<C>[];
 /** Stable display state derived only from host status. */
-export declare function rowState<C extends RowCandidate>(row: PreviewRow<C>): 'stopped' | 'starting' | 'checking' | 'ready' | 'unchecked' | 'verificationFailed' | 'failed' | 'stopping' | 'repairing' | 'coordinating' | 'repairPending' | 'repairUnknown' | 'waiting';
+export declare function rowState<C extends RowCandidate>(row: PreviewRow<C>): 'stopped' | 'starting' | 'checking' | 'ready' | 'unchecked' | 'verificationFailed' | 'failed' | 'stopping';
 /** Shared stable-identity projection used by the public query and update checks. */
 export declare function candidateSnapshot(state: {
     value: Data;
@@ -62,10 +62,6 @@ export declare function candidateSnapshot(state: {
         }[] | undefined;
         status?: Record<string, {
             [x: string]: unknown;
-            feedbackSignature?: {
-                signature: string;
-                reportId: string;
-            } | undefined;
             phase: "failed" | "preparing" | "queued" | "ready" | "starting" | "stopped" | "stopping" | "verifying";
             url?: string | undefined;
             pass: string;
@@ -91,28 +87,17 @@ export declare function candidateSnapshot(state: {
                 }[];
             } | undefined;
             failure?: {
+                [x: string]: unknown;
                 message: string;
                 owner: "framework" | "project" | "user";
                 step?: string | undefined;
                 log?: string | undefined;
                 attempts: number;
-                handling?: "agent" | "agent-done" | "agent-pending" | "agent-unknown" | "awaiting-approval" | "coordinating" | "delivery-failed" | "exhausted" | "retrying" | "waiting-user" | undefined;
-                handlingNote?: string | undefined;
-                retryAt?: number | undefined;
-                reportId?: string | undefined;
-                session?: string | undefined;
-                delegationId?: string | undefined;
                 at: number;
             } | undefined;
             source?: string | undefined;
             logDir?: string | undefined;
         }> | undefined;
-        repair?: {
-            rounds: number;
-            source: string;
-            delegationId?: string | undefined;
-            lastFailure?: string | undefined;
-        } | undefined;
     };
     revision: string;
 } | null;

@@ -19,12 +19,10 @@ __export(exports_actions, {
   asset: () => asset,
   collection: () => collection,
   home: () => home,
-  indexRevision: () => indexRevision,
   note: () => note,
   overview: () => overview,
-  projectIndex: () => projectIndex,
   record: () => record2,
-  replaceIndex: () => replaceIndex
+  recordsPage: () => recordsPage
 });
 
 
@@ -6299,7 +6297,19 @@ function operation(kind, definition, handler) {
     assertJson(result.data);
     return result.data;
   };
-  const captured = Object.freeze({ ...definition, kind, input: inputSchema, output: outputSchema, execute });
+  if (definition.idempotent === true && definition.receipt !== undefined && definition.receipt !== "idempotent")
+    throw new Error("idempotent: true conflicts with a non-idempotent receipt declaration");
+  if (definition.idempotent === false && definition.receipt === "idempotent")
+    throw new Error('idempotent: false conflicts with receipt: "idempotent"');
+  const normalizedReceipt = definition.idempotent === true ? "idempotent" : definition.receipt;
+  const captured = Object.freeze({
+    ...definition,
+    ...normalizedReceipt !== undefined ? { receipt: normalizedReceipt } : {},
+    kind,
+    input: inputSchema,
+    output: outputSchema,
+    execute
+  });
   const reference = { kind };
   Object.defineProperty(reference, definitionKey, { value: captured });
   return Object.freeze(reference);
@@ -6464,7 +6474,129 @@ function collectionAccess(note, raw, writable) {
       throw new Error("Incomplete collection read. Use ctx.db.page and follow its cursor to read the complete result.");
     return result.items;
   };
-  const read = { get, page, list };
+  const find = async (name, options = {}) => {
+    const def = declared(name);
+    const allowedKeys = new Set(["where", "search", "sort", "select", "limit", "scanLimit"]);
+    if (Object.keys(options).some((k) => !allowedKeys.has(k)))
+      throw new Error("Unknown find option");
+    const limitRaw = typeof options.limit === "number" && Number.isFinite(options.limit) ? Math.floor(options.limit) : 200;
+    const limit = Math.max(1, Math.min(500, limitRaw));
+    const scanRaw = typeof options.scanLimit === "number" && Number.isFinite(options.scanLimit) ? Math.floor(options.scanLimit) : 600;
+    const scanLimit = Math.max(limit, Math.min(2000, scanRaw));
+    const rawWhere = options.where ?? {};
+    const pushdownWhere = {};
+    const inMemorySets = [];
+    for (const [field, val] of Object.entries(rawWhere)) {
+      if (!Object.hasOwn(def.schema.shape, field) && field !== "id")
+        throw new Error(`Unknown filter field: ${field}`);
+      if (Array.isArray(val)) {
+        inMemorySets.push([field, new Set(val)]);
+      } else if (val === null || ["string", "number", "boolean"].includes(typeof val)) {
+        pushdownWhere[field] = val;
+      } else if (val !== undefined) {
+        throw new Error("Find filters support scalar equality or scalar arrays");
+      }
+    }
+    const sortSpec = Array.isArray(options.sort) ? options.sort.map((s) => ({ field: s.field, direction: s.direction ?? "asc" })) : Object.entries(options.sort ?? {}).map(([field, direction]) => ({ field, direction }));
+    for (const s of sortSpec) {
+      if (!Object.hasOwn(def.schema.shape, s.field) || !["asc", "desc"].includes(s.direction)) {
+        throw new Error(`Invalid sort field or direction: ${s.field}`);
+      }
+    }
+    const searchObj = typeof options.search === "string" ? { query: options.search } : options.search;
+    const needle = searchObj?.query?.trim().toLocaleLowerCase() ?? "";
+    const searchFields = searchObj?.fields ? [...searchObj.fields] : undefined;
+    if (searchFields) {
+      for (const f of searchFields) {
+        if (!Object.hasOwn(def.schema.shape, f))
+          throw new Error(`Unknown search field: ${f}`);
+      }
+    }
+    const requestedSelect = Array.isArray(options.select) ? [...options.select] : undefined;
+    const neededExtra = new Set;
+    if (requestedSelect) {
+      for (const [f] of inMemorySets)
+        if (f !== "id" && !requestedSelect.includes(f))
+          neededExtra.add(f);
+      for (const s of sortSpec)
+        if (!requestedSelect.includes(s.field))
+          neededExtra.add(s.field);
+      if (needle) {
+        const candidates = searchFields ?? Object.keys(def.schema.shape);
+        for (const f of candidates)
+          if (!requestedSelect.includes(f))
+            neededExtra.add(f);
+      }
+    }
+    const pageSelect = requestedSelect ? [...requestedSelect, ...neededExtra] : undefined;
+    const pushdownOrder = sortSpec.length === 1 ? { [sortSpec[0].field]: sortSpec[0].direction } : undefined;
+    const scanned = [];
+    let cursor;
+    let revision = "0";
+    let hitScanCeiling = false;
+    do {
+      const batch = await page(name, {
+        ...Object.keys(pushdownWhere).length ? { where: pushdownWhere } : {},
+        ...pushdownOrder ? { orderBy: pushdownOrder } : {},
+        ...pageSelect ? { select: pageSelect } : {},
+        ...cursor ? { cursor } : {}
+      });
+      revision = batch.revision;
+      for (const row of batch.items) {
+        scanned.push(row);
+        if (scanned.length >= scanLimit) {
+          if (batch.next !== undefined)
+            hitScanCeiling = true;
+          break;
+        }
+      }
+      if (scanned.length >= scanLimit)
+        break;
+      cursor = batch.next;
+    } while (cursor);
+    let matched = scanned;
+    if (inMemorySets.length) {
+      matched = matched.filter((row) => inMemorySets.every(([field, allowed]) => allowed.has(row[field])));
+    }
+    if (needle) {
+      matched = matched.filter((row) => {
+        const keys = searchFields ?? Object.keys(row);
+        return keys.some((k) => typeof row[k] === "string" && row[k].toLocaleLowerCase().includes(needle));
+      });
+    }
+    if (sortSpec.length > 1) {
+      matched = [...matched].sort((a, b) => {
+        for (const { field, direction } of sortSpec) {
+          const av = a[field], bv = b[field];
+          if (av === bv)
+            continue;
+          if (av === undefined || av === null)
+            return 1;
+          if (bv === undefined || bv === null)
+            return -1;
+          const cmp = av < bv ? -1 : 1;
+          return direction === "desc" ? -cmp : cmp;
+        }
+        return 0;
+      });
+    }
+    const totalMatched = matched.length;
+    const sliced = matched.slice(0, limit).map((row) => {
+      if (!neededExtra.size || !requestedSelect)
+        return row;
+      const copy = { id: row.id };
+      for (const f of requestedSelect)
+        copy[f] = row[f];
+      return copy;
+    });
+    return freezeJson({
+      items: sliced,
+      totalMatched,
+      truncated: hitScanCeiling || totalMatched > limit,
+      revision
+    });
+  };
+  const read = { get, page, list, find };
   if (!writable)
     return Object.freeze(read);
   return Object.freeze({
@@ -6563,7 +6695,7 @@ function bindActionContext(note, raw) {
     return raw.invoke({ kind, name: target.name, input });
   };
   const action = raw;
-  const { agent, notifications, previews, extensions, quip, slack, subprocess } = action;
+  const { agent, notifications, previews, extensions, subprocess } = action;
   return Object.freeze({
     note: identity(raw),
     signal: raw.signal,
@@ -6581,7 +6713,18 @@ function bindActionContext(note, raw) {
       ...agent?.prepare ? { prepare: agent.prepare.bind(agent) } : {},
       ...agent?.stop ? { stop: agent.stop.bind(agent) } : {},
       result: (runId) => agent.result(runId, { wait: false })
-    }), notifications, previews, extensions, quip, slack, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    }), notifications, previews, extensions, subprocess: Object.freeze({ exec: subprocess?.exec?.bind(subprocess) }) }),
+    decide: async (request) => {
+      assertJson(request);
+      if (!raw.decide) {
+        const answers = Object.fromEntries(request.items.map((item) => {
+          const first = typeof item.choices[0] === "string" ? item.choices[0] : item.choices[0].value;
+          return [item.id, { choice: item.fallback ?? first, confidence: 0 }];
+        }));
+        return { answers, backend: "degraded", degraded: true };
+      }
+      return raw.decide(request);
+    },
     jobs: Object.freeze({
       infer: (request, options) => {
         const onComplete = operationTarget(options.onComplete, note, ["mutation", "action"]);
@@ -6744,6 +6887,11 @@ var K = new Uint32Array([
 // model.ts
 var kindSchema = _enum(["map", "encounter", "cards", "monsters", "people", "shop", "media"]);
 var strings = array(string2());
+var linkSchema = object({
+  id: string2(),
+  label: string2(),
+  target: object({ noteId: string2(), recordId: string2() })
+});
 var recordSchema = object({
   id: string2().min(1),
   title: string2(),
@@ -6754,111 +6902,40 @@ var recordSchema = object({
   fields: array(object({ name: string2(), value: string2() })),
   sections: array(object({ title: string2(), lines: strings })),
   refs: array(object({ note: kindSchema, id: string2() })),
+  links: array(linkSchema).optional(),
   diagram: array(object({ id: string2(), label: string2(), layer: number2(), kind: string2(), to: strings })).optional(),
   thumbnail: string2().optional(),
   mediaUrl: string2().optional(),
   mediaKey: string2().optional(),
   portraits: array(object({ id: string2(), mediaKey: string2().optional(), thumbnail: string2().optional(), mediaUrl: string2().optional() })).optional()
 });
-var indexSchema = object({ connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional(), kind: kindSchema, revision: string2(), records: array(recordSchema) });
-var note = defineNote({ config: { schema: indexSchema, defaults: { kind: "cards", revision: "", records: [] } }, update: { dataVersion: "cardgame-catalog@1" } });
-
-// search.ts
-var normalized = (text) => text.normalize("NFKC").toLocaleLowerCase().trim();
-var compare = (a, b) => a.localeCompare(b, "zh-CN", { numeric: true });
-function search(rows, criteria) {
-  const q = normalized(criteria.q || ""), words = q.split(/\s+/).filter(Boolean), filters = criteria.filters || {};
-  const found = [], counts = new Map;
-  const dimensions = new Set;
-  for (const row of rows) {
-    for (const field of Object.keys(row.facets))
-      dimensions.add(field);
-    const text = normalized([row.title, row.id, row.source, row.body, ...Object.values(row.facets).flat(), ...row.fields.map((f) => f.value), ...row.sections.flatMap((s) => s.lines)].join(" "));
-    if (!words.every((w) => text.includes(w)))
-      continue;
-    const missing = Object.keys(filters).filter((k) => filters[k]?.length && !filters[k].some((v) => row.facets[k]?.includes(v)));
-    if (missing.length > 1)
-      continue;
-    for (const [k, opts] of Object.entries(row.facets)) {
-      if (missing.length && missing[0] !== k)
-        continue;
-      if (!counts.has(k))
-        counts.set(k, new Map);
-      const group = counts.get(k);
-      for (const value of opts)
-        group.set(value, (group.get(value) || 0) + 1);
-    }
-    if (!missing.length) {
-      const name = normalized(row.title), id = normalized(row.id);
-      found.push({ row, rank: q && (name === q || id === q) ? 3 : q && name.includes(q) ? 2 : q && id.includes(q) ? 1 : 0 });
-    }
-  }
-  if (criteria.sort === "name")
-    found.sort((a, b) => compare(a.row.title, b.row.title));
-  else if (q)
-    found.sort((a, b) => b.rank - a.rank);
-  const size = Math.max(1, Math.min(48, criteria.size || 24)), pages = Math.max(1, Math.ceil(found.length / size)), page = Math.max(1, Math.min(pages, criteria.page || 1));
-  const facetNeedle = normalized(criteria.facetQuery || "");
-  const facets = [...dimensions].map((key) => {
-    const choices = [...new Set([...filters[key] || [], ...counts.get(key)?.keys() || []])].filter((v) => normalized(v).includes(facetNeedle));
-    const options = choices.map((value) => ({ value, count: counts.get(key)?.get(value) || 0 })).sort((a, b) => b.count - a.count || compare(a.value, b.value));
-    return { key, options: options.slice(0, 30), hasMore: options.length > 30 };
-  });
-  const items = found.slice((page - 1) * size, page * size).map(({ row }) => ({ id: row.id, title: row.title, group: row.group, body: row.body.slice(0, 150), mediaKey: row.mediaKey || null, thumbnail: row.thumbnail || null, summary: row.fields.slice(0, 2).filter((f) => f.name !== "文件").map((f) => f.name + " " + f.value).join(" · ") }));
-  return { total: rows.length, count: found.length, page, pages, items, facets };
-}
-
-// home.ts
-var audio = (row) => row.facets["媒介"]?.includes("声音") || /\.(?:mp3|aac|wav|oga|ogg|flac|m4a)$/i.test(row.source);
-function cap(row) {
-  return {
-    ...row,
-    body: row.body.slice(0, 260),
-    sections: row.sections.slice(0, 6).map((s) => ({ ...s, lines: s.lines.slice(0, 7) })),
-    refs: row.refs.slice(0, 8),
-    fields: row.fields.slice(0, 12),
-    diagram: row.diagram?.slice(0, 7)
-  };
-}
-function homeRecords(kind, rows) {
-  let records = [];
-  if (kind === "cards") {
-    const cards = rows.filter((r) => r.group !== "牌组");
-    const hasArt = new Set(cards.filter((r) => r.mediaKey || r.thumbnail).map((r) => r.id));
-    const score = (row) => row.refs.filter((ref) => ref.note === "cards" && hasArt.has(ref.id)).length;
-    const deck = rows.filter((r) => r.group === "牌组").sort((a, b) => score(b) - score(a))[0];
-    const pool = deck ? cards.filter((r) => deck.refs.some((ref) => ref.note === "cards" && ref.id === r.id)) : cards;
-    const pictured = pool.filter((r) => r.mediaKey || r.thumbnail), plain = pool.filter((r) => !r.mediaKey && !r.thumbnail);
-    records = [...deck ? [deck] : [], ...[...pictured, ...plain].slice(0, 6)];
-  } else if (kind === "media") {
-    const portrait = rows.find((r) => r.group === "人设" || r.group === "立绘"), background = rows.find((r) => r.group === "背景"), sound = rows.find(audio);
-    records = [...new Set([portrait, background, sound, ...rows].filter((r) => !!r))].slice(0, 3);
-  } else {
-    const focus = (kind === "map" ? rows.find((r) => r.diagram?.length) : kind === "encounter" ? rows.find((r) => r.portraits?.some((p) => p.mediaKey || p.thumbnail)) : rows.find((r) => r.mediaKey || r.thumbnail)) || rows[0];
-    if (focus) {
-      records = [focus];
-      if (kind === "shop") {
-        const offer = rows.find((r) => r.group === "货架" && r.refs.some((x) => x.note === "shop" && x.id === focus.id));
-        if (offer)
-          records.push(offer);
-      }
-    }
-  }
-  return { kind, count: rows.length, records: records.map(cap) };
-}
+var configSchema = object({
+  connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional(),
+  kind: kindSchema
+});
+var note = defineNote({
+  records: [{
+    query: "recordsPage",
+    items: "/items",
+    next: "/next",
+    route: { path: "/records/:id", param: "id" },
+    id: "/id",
+    label: "/title"
+  }],
+  config: { schema: configSchema, defaults: { kind: "cards" } }
+});
 
 // actions.ts
-var projectIndex = note.query({ visibility: "private", description: "当前工作树的索引；首次连接前可查看发行样例。", output: indexSchema }, readIndex);
-async function readIndex(ctx) {
-  const config = indexSchema.parse({ kind: "cards", records: [], revision: "", ...await ctx.config.read() });
+async function readCatalog(ctx, input) {
+  const config = configSchema.parse({ kind: "cards", ...await ctx.config.read() });
   if (!config.connections?.game)
-    return config;
-  const snap = await ctx.resources.read({ name: "extension.game-project.index", connection: "game", input: {} });
+    return null;
+  const snap = await ctx.resources.read({ name: "extension.game-project.catalog", connection: "game", input });
   if (snap.error)
     throw Error(snap.error);
-  return snap.data == null ? config : indexSchema.parse(snap.data);
+  return snap.data ?? null;
 }
-var asset = note.query({ visibility: "private", description: "读取已连接游戏中的实际素材。", input: object({ key: string2() }), output: string2().nullable() }, async (ctx, input) => {
+var asset = note.query({ visibility: "private", description: "读取已绑定游戏中的实际素材。", input: object({ key: string2() }), output: string2().nullable() }, async (ctx, input) => {
   const config = await ctx.config.read();
   if (!config.connections?.game)
     return null;
@@ -6869,43 +6946,59 @@ var asset = note.query({ visibility: "private", description: "读取已连接游
 });
 var criteria = object({ facetQuery: string2().max(512).optional(), q: string2().max(1000).optional(), filters: record(string2(), array(string2())).optional(), page: number2().int().positive().optional(), sort: _enum(["default", "name"]).optional() });
 var summary = object({ id: string2(), title: string2(), group: string2(), body: string2(), thumbnail: string2().nullable(), mediaKey: string2().nullable(), summary: string2() });
+var pageOutput = object({
+  configured: boolean2(),
+  total: number2(),
+  count: number2(),
+  page: number2(),
+  pages: number2(),
+  items: array(summary),
+  facets: array(object({ key: string2(), hasMore: boolean2(), options: array(object({ value: string2(), count: number2() })) }))
+});
 var collection = note.query({
-  description: "全库搜索卡牌游戏记录，按多个分类筛选，返回分页摘要和分类计数。",
+  description: "按本便笺所属类别分页搜索游戏记录，返回当前页摘要和筛选项计数。",
   input: criteria,
-  output: object({ total: number2(), count: number2(), page: number2(), pages: number2(), items: array(summary), facets: array(object({ key: string2(), hasMore: boolean2(), options: array(object({ value: string2(), count: number2() })) })) })
-}, async (ctx, input) => search((await readIndex(ctx)).records || [], input));
+  output: pageOutput
+}, async (ctx, input) => {
+  const data = await readCatalog(ctx, { op: "page", ...input });
+  if (!data)
+    return { configured: false, total: 0, count: 0, page: 1, pages: 1, items: [], facets: [] };
+  return { ...pageOutput.omit({ configured: true }).parse(data), configured: true };
+});
+var recordsPage = note.query({
+  description: "按游标分页列出本便笺记录身份与标题。",
+  input: object({ cursor: string2().optional() }),
+  output: object({ items: array(object({ id: string2(), title: string2() })), next: string2().optional() })
+}, async (ctx, input) => {
+  const data = await readCatalog(ctx, { op: "cursor", ...input.cursor ? { cursor: input.cursor } : {} });
+  return data ? { items: data.items, ...data.next ? { next: data.next } : {} } : { items: [] };
+});
 var home = note.query({
   visibility: "private",
-  description: "桌面首页的当前内容和进度。",
+  description: "读取桌面紧凑卡片所需的当前内容。",
   input: object({}),
-  output: object({ kind: kindSchema, count: number2(), records: array(recordSchema) })
+  output: object({ configured: boolean2(), kind: kindSchema, count: number2(), records: array(recordSchema) })
 }, async (ctx) => {
-  const config = await readIndex(ctx);
-  return homeRecords(config.kind, config.records);
+  const config = configSchema.parse({ kind: "cards", ...await ctx.config.read() });
+  const data = await readCatalog(ctx, { op: "home" });
+  if (!data)
+    return { configured: false, kind: config.kind, count: 0, records: [] };
+  return { configured: true, kind: kindSchema.parse(data.kind), count: data.count, records: array(recordSchema).parse(data.records) };
 });
-var overview = note.query({ description: "桌面便笺摘要。", output: object({ count: number2(), items: array(string2()) }) }, async (ctx) => {
-  const rows = (await readIndex(ctx)).records || [];
-  return { count: rows.length, items: rows.slice(0, 3).map((r) => r.title) };
+var overview = note.query({
+  description: "读取本便笺的记录数与前三条标题。",
+  output: object({ count: number2(), items: array(string2()) })
+}, async (ctx) => {
+  const data = await readCatalog(ctx, { op: "overview" });
+  return data ?? { count: 0, items: [] };
 });
-var record2 = note.query({ description: "按稳定 ID 读取字段、引用与游戏文件中的具体路径。", input: object({ id: string2() }), output: recordSchema.nullable() }, async (ctx, { id }) => (await readIndex(ctx)).records?.find((r) => r.id === id) || null);
-var indexRevision = note.query({ description: "读取当前游戏索引版本，供刷新时核对。", output: object({ revision: string2() }) }, async (ctx) => ({ revision: (await readIndex(ctx)).revision || "" }));
-var replaceIndex = note.mutation({
-  visibility: "public",
-  description: "将此库原子更新为指定游戏工作树重新生成的索引。先读取 indexRevision，再传 expectedRevision。",
-  input: indexSchema.omit({ connections: true }).extend({ expectedRevision: string2() }),
-  output: object({ revision: string2(), count: number2() })
-}, async (ctx, { expectedRevision, ...next }) => {
-  const current = await ctx.config.read();
-  if (next.kind !== current.kind)
-    throw new Error("便笺类型不匹配");
-  if (current.revision !== next.revision) {
-    if ((current.revision || "") !== expectedRevision)
-      throw new Error("索引已更新，请重读版本");
-    if (new Set(next.records.map((r) => r.id)).size !== next.records.length)
-      throw new Error("索引包含重复 ID");
-    await ctx.config.update(next);
-  }
-  return { revision: next.revision, count: next.records.length };
+var record2 = note.query({
+  description: "按稳定 ID 实时读取单条记录的字段、引用与游戏源文件路径。",
+  input: object({ id: string2() }),
+  output: recordSchema.nullable()
+}, async (ctx, { id }) => {
+  const data = await readCatalog(ctx, { op: "record", id });
+  return data ? recordSchema.parse(data) : null;
 });
 
 var SAVED_IMAGE_LIMITS = Object.freeze({ bytes: 512 * 1024, totalBytes: 2 * 1024 * 1024, count: 8, dimension: 1600 });

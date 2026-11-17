@@ -1,1 +1,2 @@
-export default function StudioView(): import("react").JSX.Element;
+declare const _default: () => import("react").ReactNode;
+export default _default;

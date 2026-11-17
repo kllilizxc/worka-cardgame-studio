@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "dca53c35b03c37d555aadec5d5244334ea97a865f0f96e3cf98a5439316d7c61",
+  "codeVersion": "1faeb14b05ef247a791220413157e02a7805cdfccc9816dc3f7103635a648472",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -14,7 +14,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-ideas",
-    "description": "保存作者尚未决定制作的灵感，在有具体需求时提供相关原话。"
+    "description": "接收并保存游戏点子；模糊点子仅入库并一句话回复，具体点子由连线自动转为制作待办并在新分支开工。"
   },
   "typeErrors": []
 }
