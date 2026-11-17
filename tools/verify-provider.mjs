@@ -33,7 +33,9 @@ export async function verifyProvider({app,installed,engine,byKey,source}){
     const receipt=await invoke('bind',{source:root,noteId:byKey.get('story')});
     assert.equal(receipt.status,'accepted');
     await app.commands.wait(receipt.executionId);
-    assert.equal((await app.core.getExecution(receipt.executionId))?.value.result?.root,root);
+    const execution=(await app.core.getExecution(receipt.executionId))?.value;
+    assert.equal(execution?.status,'completed',execution?.error);
+    assert.equal(execution?.result?.root,root);
     await until(()=>contentNotes.every(k=>observed.get(k)?.ready&&observed.get(k)?.root===root),'已打开便笺未自动收到项目连接状态');
     for(const key of contentNotes){
       const noteId=byKey.get(key);
