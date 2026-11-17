@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,readFile,realpath,writeFile,rm,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,readdir,realpath,writeFile,rm,symlink} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {tmpdir} from 'node:os';
@@ -318,3 +318,48 @@ test('rebinding a desktop closes the old root watcher only after its last deskto
   }
 });
 
+
+
+test('a cancelled clone clears its temporary checkout and a later bind can proceed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cardgame-clone-cancel-'));
+  try {
+    const {game,host} = await createFixture(root);
+    const bin=join(root,'bin'), marker=join(root,'git-started');
+    const realGit=execFileSync('which',['git'],{encoding:'utf8'}).trim();
+    await mkdir(bin);
+    await writeFile(join(bin,'git'),`#!${process.execPath}
+const {writeFileSync}=require('node:fs');
+const {spawnSync}=require('node:child_process');
+if(process.argv.includes('clone')){
+  writeFileSync(${JSON.stringify(marker)},String(process.pid));
+  setInterval(()=>{},1000);
+}else{
+  const result=spawnSync(${JSON.stringify(realGit)},process.argv.slice(2),{stdio:'inherit'});
+  process.exit(result.status??1);
+}
+`,{mode:0o700});
+    host.runtime.subprocess={spawn:spec=>testSubprocess.spawn({...spec,env:{...spec.env,PATH:`${bin}:${process.env.PATH}`}})};
+    const provider=gameProject(host,{processOptions:{timeoutMs:1000}});
+    try {
+      const controller=new AbortController();
+      const running=provider.commands.bind.run({desktopId:'one'},{noteId:'one-story',caller:{kind:'user'},executionId:'command:cancel-clone',signal:controller.signal});
+      const rejected=assert.rejects(running);
+      try {
+        await until(()=>readFile(marker).then(()=>true,()=>false),'clone did not start');
+        const status=await provider.resources.status.load({},ctx('one-cards'));
+        assert.equal(status.executionId,'command:cancel-clone');
+        assert.equal(status.ready,false);
+      } finally {
+        controller.abort();
+        await rejected;
+      }
+      const pid=Number(await readFile(marker,'utf8'));
+      await until(()=>{try{process.kill(pid,0);return false;}catch(error){return error.code==='ESRCH';}},'cancelled Git process did not exit');
+      const [desktop]=await readdir(join(host.dataRoot,'providers','game-project'));
+      assert.deepEqual(await readdir(join(host.dataRoot,'providers','game-project',desktop,'repos')),[]);
+      assert.equal((await provider.resources.status.load({},ctx('one-cards'))).executionId,undefined);
+      const ready=await runBind(provider,{desktopId:'one',source:game},{kind:'user'});
+      assert.equal(ready.root,await realpath(game));
+    } finally {await provider.close();}
+  } finally {await rm(root,{recursive:true,force:true});}
+});
