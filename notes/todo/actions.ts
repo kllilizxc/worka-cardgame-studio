@@ -1,15 +1,16 @@
+import { DEFAULT_CATEGORY } from './default-category';
 import { attachmentRefsSchema, attachmentsSchema, validateAttachments } from './attachment-schema';
-import { z, pageInput, agentCompletionInput } from '@dsh-workbench/runtime';
-import { note, todoStatusSchema, todoPrioritySchema, todoImageSchema, todoItemSchema, storedTodoItemSchema, todoItemSourceSchema, revisionOutputSchema, countsSchema } from './model';
+import { z, pageInput, agentCompletionInput } from '@realiz3r/worka-runtime';
+import { note, todoStatusSchema, todoPrioritySchema, todoImageSchema, todoItemSchema, storedTodoItemSchema, todoItemSourceSchema, todoWorkKindSchema, unblockProposalSchema, unblockActionSchema, revisionOutputSchema, countsSchema } from './model';
 import { delegationRequested } from './contracts';
 import { business, getItem, saveItem, insertItem, emptyStats, categoryKey } from './state';
 import { importInTransaction } from './collaboration';
 import { todoFilterSchema, todoListItemSchema, todoRequirement, todoRequirementFingerprint, requirementSchema, projectTodoRows } from './list';
 import type { TodoImage, TodoItem } from './model';
-import { sameProgress } from './progress';
+import { sameProgress, unblockForProgress } from './progress';
 import { appendProgress } from './progress-store';
 export { note } from './model';
-export { linkSession, executionDetails, sessionItems, sessionLinked, sessionTask, sourceMetadata, setArchived, progressTimeline } from './sessions';
+export { linkSession, executionDetails, sessionItems, sessionLinked, sessionTask, sourceMetadata, setArchived, progressTimeline, markChangeWork } from './sessions';
 export { changed, delegationRequested } from './contracts';
 export { editTodo, commitEdit, feedback, moveTodo, importItems } from './collaboration';
 export type { DelegateTodoInput, FeedbackInput, MoveTodoInput, ImportItemInput, ImportItemsInput, ImportItemResult, TodoItemSource, TodoData, TodoImage, TodoItem, TodoPriority, TodoStatus } from './collaboration';
@@ -45,8 +46,8 @@ function normalizeTodoImages(input: unknown): TodoImage[] {
 }
 
 
-export const upsertExternalItem = note.mutation({ visibility: 'public', description: '按来源稳定身份创建或更新一项待办；只保存草稿，不自动交办。',
-  input: z.object({ title: z.string(), description: z.string().optional(), source: todoItemSourceSchema.pick({ kind: true, itemId: true, taskKey: true, label: true, url: true }) }),
+export const upsertExternalItem = note.mutation({ visibility: 'public', description: '按来源稳定身份保存待办草稿，可设置截止日期 dueDate（YYYY-MM-DD 或 YYYY-MM-DDTHH:mm，空字符串清除）。',
+  input: z.object({ title: z.string(), description: z.string().optional(), dueDate: z.string().optional(), workKind: todoWorkKindSchema.optional(), source: todoItemSourceSchema.pick({ kind: true, itemId: true, taskKey: true, label: true, url: true }) }),
   output: z.object({ itemId: z.string(), revision: z.string(), created: z.boolean(), updated: z.boolean() }), objectRef: '/itemId', revision: '/revision',
 }, async (ctx, input) => {
   if (!input.source.kind.trim() || !input.source.itemId.trim()) throw new Error('来源需要类型和稳定事项 ID');
@@ -67,15 +68,17 @@ export const requestDelegation = note.mutation({ visibility: 'public', descripti
   return { itemId: item.id, eventId: event.id, duplicate: event.duplicate };
 });
 export const recordProgress = note.mutation({ visibility: 'public', description: '将已核验任务的实际进展和结论写回原待办。',
-  input: z.object({ itemId: z.string(), status: todoStatusSchema, conclusion: z.string().optional(), summary: z.string().optional(), expectedRevision: z.string().optional() }),
+  input: z.object({ itemId: z.string(), status: todoStatusSchema, conclusion: z.string().optional(), summary: z.string().optional(), expectedRevision: z.string().optional(), unblockAction: unblockProposalSchema.optional() }),
   output: z.object({ itemId: z.string(), status: todoStatusSchema, revision: z.string(), duplicate: z.boolean() }), objectRef: '/itemId', revision: '/revision',
 }, async (ctx, input) => {
   const row = await getItem(ctx, input.itemId), item = business(row);
   if (input.expectedRevision && input.expectedRevision !== String(row.revision)) throw new Error('待办版本已变化，请重新读取');
-  if (input.status === 'done' && row.status !== 'done') throw new Error('只有用户可以确认任务完成；请移到 blocking 并记录待用户 review 的成果');
   const conclusion = input.conclusion?.trim();
-  const next = { ...item, status: input.status, completed: input.status === 'done', ...(conclusion ? { conclusion } : {}) };
-  if (sameProgress(item, next)) return { itemId: row.id, status: row.status, revision: String(row.revision), duplicate: true };
+  if (input.unblockAction && input.status !== 'blocking') throw Error('解除阻塞操作只能用于阻塞中的待办');
+  const unblockAction = input.status === 'blocking' ? unblockForProgress(item,input.unblockAction,ctx.note.id,String(row.revision)) : undefined;
+  const {unblockAction:_oldAction,...withoutAction}=item;
+  const next = { ...withoutAction, status: input.status, completed: input.status === 'done', ...(conclusion ? { conclusion } : {}), ...(unblockAction ? {unblockAction} : {}) };
+  if (sameProgress(item, next) && JSON.stringify(item.unblockAction ?? null) === JSON.stringify(unblockAction ?? null)) return { itemId: row.id, status: row.status, revision: String(row.revision), duplicate: true };
   const revision = await saveItem(ctx, next, row.id);
   await appendProgress(ctx, next, revision, 'recordProgress', {summary:input.summary,conclusion});
   return { itemId: row.id, status: input.status, revision, duplicate: false };
@@ -85,14 +88,14 @@ export const saveNewTodo = note.mutation({ input: todoItemSchema, output: z.obje
   return { itemId: item.id, revision: await saveItem(ctx, item, item.id) };
 });
 export const addTodo = note.action({ description: '创建并保存一项待办。', input: z.object({ title: z.string(), priority: todoPrioritySchema.optional(), category: z.string().optional(),
-  status: todoStatusSchema.optional(), startDate: z.string().optional(), dueDate: z.string().optional(), images: z.array(todoImageSchema).optional(), description: z.string().optional(), attachments: attachmentRefsSchema.optional() }),
+  status: todoStatusSchema.optional(), workKind: todoWorkKindSchema.optional(), startDate: z.string().optional(), dueDate: z.string().optional(), images: z.array(todoImageSchema).optional(), description: z.string().optional(), attachments: attachmentRefsSchema.optional() }),
   output: z.object({ itemId: z.string(), revision: z.string() }),
 }, async (ctx, input) => {
   const title = input.title.trim(); if (!title) throw new Error('Title cannot be empty');
   const images = normalizeTodoImages(input.images), attachments = input.attachments ? await validateAttachments(ctx, input.attachments) : [];
   const status = input.status ?? 'todo';
   return ctx.runMutation(saveNewTodo, { id: ctx.id(), title, status, completed: status === 'done', priority: input.priority ?? 'medium',
-    category: input.category?.trim() || '日常', startDate: input.startDate, dueDate: input.dueDate, createdAt: new Date().toISOString(),
+    category: input.category?.trim() || DEFAULT_CATEGORY, ...(input.workKind ? {workKind:input.workKind} : {}), startDate: input.startDate, dueDate: input.dueDate, createdAt: new Date().toISOString(),
     ...(images.length ? { images } : {}), ...(attachments.length ? { attachments } : {}), ...(input.description?.trim() ? { description: input.description.trim() } : {}) });
 });
 export const updateStatus = note.mutation({ input: z.object({ id: z.string(), status: todoStatusSchema }), output: revisionOutputSchema }, async (ctx, input) => {
@@ -112,21 +115,13 @@ export const clearCompleted = note.mutation({ output: revisionOutputSchema.exten
   return { revision, pending: Boolean(page.next) };
 });
 const listPageSchema = z.object({ items: z.array(todoListItemSchema), revision: z.string(), next: z.string().optional() });
-export const itemPage = note.query({ description: '分页读取待办摘要；分类和状态使用原生索引，搜索标题、制作要求、结论与来源，跳过空页。',
+export const itemPage = note.query({ description: '分页读取待办摘要；分类和状态使用原生索引，标题搜索在当前页匹配，空页有next须继续。',
   input: todoFilterSchema.merge(pageInput).extend({ status: todoStatusSchema.optional(), active: z.boolean().optional(), archived:z.boolean().optional() }), output: listPageSchema, revision: '/revision',
 }, async (ctx, input) => {
   const where = { archived: input.archived??false, ...(input.category ? { category: input.category } : {}), ...(input.status ? { status: input.status } : {}), ...(input.active ? { active: true } : {}) };
-  const tokens=(input.search||'').normalize('NFKC').toLowerCase().trim().split(/\s+/).filter(Boolean);
-  let cursor=input.cursor;
-  for(;;){
-    const page=await ctx.db.page('items',{where,orderBy:{position:'asc'},select:['view','taskSources','source','description','conclusion'],cursor});
-    const matches=tokens.length?page.items.filter(row=>{
-      const text=[row.id,row.view.title,row.description,row.conclusion,row.view.category,row.view.sourceLabel,row.source?.label,...(row.taskSources||[]).map(s=>s.name)].filter(Boolean).join(' ').normalize('NFKC').toLowerCase();
-      return tokens.every(t=>text.includes(t));
-    }):page.items;
-    if(matches.length||!page.next)return {...page,items:await projectTodoRows(ctx,matches)};
-    cursor=page.next;
-  }
+  const page = await ctx.db.page('items', { where, orderBy: { position: 'asc' }, select: ['view','taskSources','source'], cursor: input.cursor });
+  const needle = input.search?.trim().toLocaleLowerCase();
+  return { ...page, items: (await projectTodoRows(ctx, page.items)).filter(item => !needle || item.title.toLocaleLowerCase().includes(needle)) };
 });
 export const categories = note.query({ visibility: 'private', input: pageInput.extend({ search: z.string().optional() }),
   output: z.object({ items: z.array(z.string()), revision: z.string(), next: z.string().optional() }),
@@ -191,21 +186,39 @@ export const items=note.query({visibility:'public',description:'读取全部待�
 
 export {assignmentContext,assignPreparedSession,assignSession,commitAssignment,assignmentDispatchUnknown,assignmentCompleted} from './assignment';
 
-/** Import examples through the normal indexed store, without dispatching work to other notes. */
-export const installExampleWork=note.mutation({visibility:'private',output:z.null()},async ctx=>{
-  if(!(await ctx.config.read()).includeExampleWork)return null;
-  if(!(await ctx.db.page('items',{select:[]})).items.length){
-    const examples=[
-      ['guardian-support','调整守关者增援','确认封印守关者第四回合的增援，比较不同起手的生存空间。','in_progress','战斗'],
-      ['bell-dialogue','补狐爷爷对白','在桥下的倒铃两条分支里，核对狐爷爷给出的山路提示。','blocking','剧情'],
-      ['jade-map-events','完善青玉洞地图事件','给山腰古祠补一次搜刮选择，再核对它和青玉洞的路线连接。','todo','探索'],
-      ['return-rope-icon','制作归返绳图标','为山中杂货铺的归返绳准备能在小尺寸下辨认的图标。','todo','美术'],
-    ] as const;
-    for(const [index,[id,title,description,status,category]] of examples.entries()){
-      await saveItem(ctx,{id,title,description,status,category,createdAt:'2026-10-31T02:30:00.000Z'},id,
-        ['A','B','C','D'][index],false);
-    }
+/** A turn start is evidence of work, not evidence that the task is complete. */
+export const sessionStarted = note.mutation({
+  visibility: 'private',
+  input: z.object({ itemId: z.string(), sessionId: z.string(), expectedRevision: z.string() }),
+  output: z.object({ moved: z.boolean() }),
+}, async (ctx, input) => {
+  const row = await ctx.db.get('items', input.itemId);
+  if (!row || String(row.revision) !== input.expectedRevision || row.archived || row.status === 'done' || row.status === 'in_progress'
+    || !(row.sessions ?? []).some(session => session.sessionId === input.sessionId && !session.archived)) return { moved: false };
+  await saveItem(ctx, { ...business(row), status: 'in_progress', completed: false }, input.itemId);
+  return { moved: true };
+});
+
+export const sessionActivityPage = note.query({ visibility:'private',
+  input:z.object({itemIds:z.array(z.string()).max(400)}), output:z.object({runningItemIds:z.array(z.string())}),
+}, async (ctx, {itemIds}) => {
+  const items = [];
+  for (const id of new Set(itemIds)) {
+    const row = await ctx.db.get('items', id);
+    items.push({id, sessionIds:(row?.sessions ?? []).filter(link => !link.archived).map(link => link.sessionId)});
   }
-  await ctx.config.update({includeExampleWork:false});
-  return null;
+  const ids = [...new Set(items.flatMap(item => item.sessionIds))].sort();
+  const running = new Set<string>();
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const snapshot = await ctx.resources.read({name:'extension.session-activity.live',input:{sessionIds:ids.slice(offset, offset + 100)}});
+    if (snapshot.error || !snapshot.data) throw Error(snapshot.error ?? '对话状态尚未就绪');
+    const sessions = z.array(z.object({id:z.string(),status:z.string()})).parse(snapshot.data);
+    for (const session of sessions) if (session.status === 'running') running.add(session.id);
+  }
+  return {runningItemIds:items.filter(item => item.sessionIds.some(id => running.has(id))).map(item => item.id)};
+});
+
+/** Host revalidates this source-owned proposal immediately before dispatch. */
+export const unblockRequest=note.query({visibility:'private',input:z.object({itemId:z.string()}),output:unblockActionSchema.nullable()},async(ctx,{itemId})=>{
+ const row=await ctx.db.get('items',itemId);return row && row.status==='blocking' && !row.archived ? row.unblockAction??null : null;
 });

@@ -40,14 +40,19 @@ function assetType(path,meta) {
   if(/background|backdrop|场景|背景|exterior|interior|clearing|\/bg[._/]/i.test(path+' '+meta))return '背景';
   return '素材图';
 }
-export function buildCatalog(root){
+export function buildCatalog(root,{hashCache,gitCache}={}){
   const rows=Object.fromEntries(kinds.map(k=>[k,new Map()]));
   const head=git(root,'rev-parse','HEAD');
-  const remote=git(root,'config','--get','remote.origin.url').match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
-  const tracked=new Map(git(root,'ls-tree','-rz','HEAD','--','public','art-references').split('\0').flatMap(line=>{
-    const match=/^100\d+ blob ([a-f0-9]+)\t([\s\S]+)$/.exec(line);return match?[[match[2],match[1]]]:[];
-  }));
-  const base=remote&&head?'https://raw.githubusercontent.com/'+remote[1]+'/'+remote[2]+'/'+head+'/':'';
+  let base='',tracked=new Map();
+  if(gitCache&&gitCache.head===head){base=gitCache.base;tracked=gitCache.tracked;}
+  else{
+    const remote=git(root,'config','--get','remote.origin.url').match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
+    tracked=new Map(git(root,'ls-tree','-rz','HEAD','--','public','art-references').split('\0').flatMap(line=>{
+      const match=/^100\d+ blob ([a-f0-9]+)\t([\s\S]+)$/.exec(line);return match?[[match[2],match[1]]]:[];
+    }));
+    base=remote&&head?'https://raw.githubusercontent.com/'+remote[1]+'/'+remote[2]+'/'+head+'/':'';
+    if(gitCache){gitCache.head=head;gitCache.base=base;gitCache.tracked=tracked;}
+  }
   function add(note,id,title,group,source,body=''){
     if(typeof id!=='string'||!id.length)throw new Error('Missing record ID: '+source);
     if(rows[note].has(id))throw new Error('Duplicate '+note+' ID '+id+' in '+source);
@@ -65,12 +70,19 @@ export function buildCatalog(root){
   for(const f of [...walk(root,'public'),...walk(root,'art-references')].filter(f=>image.test(f)||audio.test(f))){
     const a=assetMeta.get(f), usage=assetType(f,JSON.stringify(a?.metadata||{})), id=a?.id||'asset:'+f;
     const row=add('media',id,a?.metadata?.name||a?.metadata?.title||basename(f),usage,f);
-    const bytes=readFileSync(join(root,f)),digest=createHash('sha256').update(bytes).digest('hex').slice(0,16);
-    row.mediaKey=f+'?v='+digest;
+    const full=join(root,f),st=statSync(full),oid=tracked.get(f);
+    let cached=hashCache?.get(f);
+    if(!cached||cached.size!==st.size||cached.mtimeMs!==st.mtimeMs||cached.oidKind!==(oid?.length||0)){
+      const bytes=readFileSync(full);
+      const digest=createHash('sha256').update(bytes).digest('hex').slice(0,16);
+      const blobOid=oid?createHash(oid.length===64?'sha256':'sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex'):'';
+      cached={size:st.size,mtimeMs:st.mtimeMs,digest,oidKind:oid?.length||0,blobOid};
+      hashCache?.set(f,cached);
+    }
+    row.mediaKey=f+'?v='+cached.digest;
     row.facets=labels({'媒介':audio.test(f)?'声音':'图像','用途':usage,'格式':extname(f).slice(1).toUpperCase(),'目录':f.split('/').slice(0,3).join('/'),'标签':a?.tags});
-    row.fields=fields({'文件':f,'大小':statSync(join(root,f)).size+' B','当前版本':a?.currentVersionId});
-    const oid=tracked.get(f);
-    if(base&&oid&&createHash(oid.length===64?'sha256':'sha1').update('blob '+bytes.length+'\0').update(bytes).digest('hex')===oid)row.mediaUrl=base+encodePath(f);
+    row.fields=fields({'文件':f,'大小':st.size+' B','当前版本':a?.currentVersionId});
+    if(base&&oid&&cached.blobOid===oid)row.mediaUrl=base+encodePath(f);
     row.sections=[section('版本',(a?.versions||[]).map(v=>v.path+' · '+v.revision.slice(0,12)))];
     assetByPath.set(f,row);
   }
@@ -189,16 +201,13 @@ export function buildCatalog(root){
       if(ev){r.body=ev.description||r.body;r.sections.push(section('事件结果',(ev.pool||[]).map(v=>v.label+' · '+(v.description||'')+'（权重 '+(v.weight??1)+'）')));}
     });
   }
-  const hash=createHash('sha256');
   for(const [kind,dict] of Object.entries(rows))for(const row of dict.values()){
     // A target must exist in this exact checkout; discarded references never become broken host links.
     const seen=new Set();row.refs=row.refs.filter(t=>{const key=t.note+'\0'+t.id;if(!rows[t.note]?.has(t.id)||seen.has(key))return false;seen.add(key);return true;});
     row.sections=row.sections.filter(s=>s.lines.length);
     if(!row.thumbnail)delete row.thumbnail;
-    hash.update(kind+'\0'+JSON.stringify(row));
   }
-  const revision=hash.digest('hex');
-  return Object.fromEntries(kinds.map(kind=>[kind,{initialState:{},initialConfig:{kind,revision,records:[...rows[kind].values()]}}]));
+  return Object.fromEntries(kinds.map(kind=>[kind,{initialState:{},initialConfig:{kind,records:[...rows[kind].values()]}}]));
 }
 export function catalogLinks(catalog){
   const all=new Map(), result=new Map();

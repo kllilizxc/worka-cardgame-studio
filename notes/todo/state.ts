@@ -1,6 +1,6 @@
 import { validateSchedule } from './schedule';
-import { sha256 } from '@dsh-workbench/runtime';
-import type { NoteMutationContext, NoteQueryContext } from '@dsh-workbench/runtime';
+import { sha256 } from '@realiz3r/worka-runtime';
+import type { NoteMutationContext, NoteQueryContext } from '@realiz3r/worka-runtime';
 import { note, normalizeStatus, type TodoItem } from './model';
 import { todoListItem } from './list';
 import { changed } from './contracts';
@@ -39,6 +39,8 @@ export async function getItem(ctx: ReadContext, id: string) {
 }
 export async function saveItem(ctx: WriteContext, item: TodoItem | null, id: string, position?: string, publish = true) {
   const previous = id ? await ctx.db.get('items', id) : null;
+  // A stale remedy must never remain actionable after the blocker is cleared.
+  if (item && normalizeStatus(item) !== 'blocking' && item.unblockAction) { item = {...item}; delete item.unblockAction; }
   if (item && (item.startDate !== previous?.startDate || item.dueDate !== previous?.dueDate)) validateSchedule(item);
   const all = structuredClone(await ctx.db.get('totals', 'all') ?? emptyStats());
   if (!item && !previous) return String(all.revision);
@@ -80,7 +82,7 @@ export async function saveItem(ctx: WriteContext, item: TodoItem | null, id: str
     for(const link of previous?.sessions??[])await ctx.db.delete('sessionIndex',JSON.stringify([link.taskId,id]));
   }
   if(nextImport)await ctx.db.put('imports',nextImport,{itemId:id});
-  if(publish)await changed.publish(ctx, { itemId: id, title: item?.title ?? previous!.title, revision: String(nextRevision) }, { key: `${id}:${nextRevision}` });
+  if(publish)await changed.publish(ctx, { itemId: id, title: item?.title ?? previous!.title, revision: String(nextRevision), ...((item ?? previous)?.workKind ? {workKind:(item ?? previous)!.workKind} : {}) }, { key: `${id}:${nextRevision}` });
   return String(nextRevision);
 }
 

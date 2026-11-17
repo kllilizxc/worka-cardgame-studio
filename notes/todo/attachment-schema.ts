@@ -1,7 +1,7 @@
-import { fileRefSchema, z, type NoteFilesReader } from '@dsh-workbench/runtime';
+import { fileRefSchema, NOTE_FILE_MAX_BYTES, z, type NoteFilesReader } from '@realiz3r/worka-runtime';
 
 export const attachmentSchema = fileRefSchema.extend({
-  name: z.string(), mime: z.string(), size: z.number().int().min(0).max(4 * 1024 * 1024), sha256: z.string(),
+  name: z.string(), mime: z.string(), size: z.number().int().min(0).max(NOTE_FILE_MAX_BYTES), sha256: z.string(),
 });
 export const attachmentsSchema = z.array(attachmentSchema).max(20);
 export const attachmentRefsSchema = z.array(fileRefSchema).max(20);

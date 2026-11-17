@@ -1,6 +1,10 @@
 import { type ReactNode } from 'react';
 /** Only authored interface copy. Persisted content keeps its original language. */
 export declare const english: {
+    解除阻塞: string;
+    "发送中…": string;
+    已发送: string;
+    "已发送，可在目标对话中查看进展。": string;
     新建任务: string;
     待办视图: string;
     看板: string;
@@ -59,6 +63,8 @@ export declare const english: {
     "保存后，点击“{p0}”将新要求交给 AI。": string;
     "查看待办：{p0}": string;
     "打开对话：{p0}": string;
+    "打开正在运行的对话：{p0}": string;
+    运行中: string;
     打开对话: string;
     详情: string;
     关闭详情: string;
@@ -76,13 +82,13 @@ export declare const english: {
     "本页没有匹配任务，请继续下一页。": string;
     "本页没有匹配任务。": string;
     请在待办编辑器中完成或移除附件上传: string;
-    "文件超过 4 MiB，请选择较小的文件": string;
+    "文件超过 20 MiB，请选择较小的文件": string;
     "每项任务最多添加 20 个文件附件": string;
     "下载附件：{p0}": string;
     "移除附件：{p0}": string;
-    "添加附件 · 每个最多 4 MiB": string;
+    "添加附件 · 每个最多 20 MiB": string;
     添加附件: string;
-    "每个最多 4 MiB · 最多 20 个": string;
+    "每个最多 20 MiB · 最多 20 个": string;
     移除: string;
     上传失败: string;
     "上传中…": string;
@@ -208,7 +214,11 @@ export declare const english: {
     留给下一件事: string;
     "＋ 添加任务": string;
 };
-export declare const messages: import("@dsh-workbench/runtime").MessageCatalog<{
+export declare const messages: import("@realiz3r/worka-runtime").MessageCatalog<{
+    解除阻塞: string;
+    "\u53D1\u9001\u4E2D\u2026": string;
+    已发送: string;
+    "\u5DF2\u53D1\u9001\uFF0C\u53EF\u5728\u76EE\u6807\u5BF9\u8BDD\u4E2D\u67E5\u770B\u8FDB\u5C55\u3002": string;
     新建任务: string;
     待办视图: string;
     看板: string;
@@ -267,6 +277,8 @@ export declare const messages: import("@dsh-workbench/runtime").MessageCatalog<{
     "\u4FDD\u5B58\u540E\uFF0C\u70B9\u51FB\u201C{p0}\u201D\u5C06\u65B0\u8981\u6C42\u4EA4\u7ED9 AI\u3002": string;
     "\u67E5\u770B\u5F85\u529E\uFF1A{p0}": string;
     "\u6253\u5F00\u5BF9\u8BDD\uFF1A{p0}": string;
+    "\u6253\u5F00\u6B63\u5728\u8FD0\u884C\u7684\u5BF9\u8BDD\uFF1A{p0}": string;
+    运行中: string;
     打开对话: string;
     详情: string;
     关闭详情: string;
@@ -284,13 +296,13 @@ export declare const messages: import("@dsh-workbench/runtime").MessageCatalog<{
     "\u672C\u9875\u6CA1\u6709\u5339\u914D\u4EFB\u52A1\uFF0C\u8BF7\u7EE7\u7EED\u4E0B\u4E00\u9875\u3002": string;
     "\u672C\u9875\u6CA1\u6709\u5339\u914D\u4EFB\u52A1\u3002": string;
     请在待办编辑器中完成或移除附件上传: string;
-    "\u6587\u4EF6\u8D85\u8FC7 4 MiB\uFF0C\u8BF7\u9009\u62E9\u8F83\u5C0F\u7684\u6587\u4EF6": string;
+    "\u6587\u4EF6\u8D85\u8FC7 20 MiB\uFF0C\u8BF7\u9009\u62E9\u8F83\u5C0F\u7684\u6587\u4EF6": string;
     "\u6BCF\u9879\u4EFB\u52A1\u6700\u591A\u6DFB\u52A0 20 \u4E2A\u6587\u4EF6\u9644\u4EF6": string;
     "\u4E0B\u8F7D\u9644\u4EF6\uFF1A{p0}": string;
     "\u79FB\u9664\u9644\u4EF6\uFF1A{p0}": string;
-    "\u6DFB\u52A0\u9644\u4EF6 \u00B7 \u6BCF\u4E2A\u6700\u591A 4 MiB": string;
+    "\u6DFB\u52A0\u9644\u4EF6 \u00B7 \u6BCF\u4E2A\u6700\u591A 20 MiB": string;
     添加附件: string;
-    "\u6BCF\u4E2A\u6700\u591A 4 MiB \u00B7 \u6700\u591A 20 \u4E2A": string;
+    "\u6BCF\u4E2A\u6700\u591A 20 MiB \u00B7 \u6700\u591A 20 \u4E2A": string;
     移除: string;
     上传失败: string;
     "\u4E0A\u4F20\u4E2D\u2026": string;
@@ -420,3 +432,5 @@ export declare function ui(key: keyof typeof english, values?: Record<string, st
 export declare namespace ui {
     var rich: (key: keyof typeof english, values?: Record<string, ReactNode>) => (string | number | bigint | boolean | Iterable<ReactNode> | Promise<string | number | bigint | boolean | Iterable<ReactNode> | import("react").ReactElement<unknown, string | import("react").JSXElementConstructor<any>> | import("react").ReactPortal | null | undefined> | import("react").ReactElement<unknown, string | import("react").JSXElementConstructor<any>> | null | undefined)[];
 }
+/** Translate only the template-owned category, never user-authored labels. */
+export declare function categoryLabel(category: string): string;

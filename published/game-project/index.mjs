@@ -1,196 +1,15 @@
-// .tmp/worka-cardgame-studio/provider/index.mjs
+// provider/index.mjs
 import { createHash as createHash2 } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
-import { access, lstat, mkdir, mkdtemp, readFile as readFile3, readdir as readdir2, realpath as realpath2, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname as dirname2, extname as extname2, isAbsolute, join as join4, relative as relative2, resolve as resolve2, sep as sep2 } from "node:path";
+import { watch as watchFs } from "node:fs";
+import { access, mkdir, mkdtemp, readFile as readFile2, realpath as realpath2, rename, rm, stat } from "node:fs/promises";
+import { dirname as dirname2, extname as extname2, isAbsolute, join as join3, relative as relative2, sep as sep2 } from "node:path";
 
-// .tmp/worka-cardgame-studio/tools/studio.mjs
-import { readFile as readFile2 } from "node:fs/promises";
-import { join as join3 } from "node:path";
-import { execFileSync as execFileSync2 } from "node:child_process";
-
-// .tmp/worka-cardgame-studio/tools/story-index.mjs
-import { readFile, readdir, realpath } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
-async function listMarkdown(root, dir = "knowledge") {
-  const entries = await readdir(join(root, dir), { withFileTypes: true });
-  const groups = await Promise.all(entries.sort((a, b) => a.name.localeCompare(b.name)).map((entry) => {
-    const path = dir + "/" + entry.name;
-    if (entry.isDirectory())
-      return listMarkdown(root, path);
-    return entry.isFile() && /\.md(?:own|arkdown)?$/i.test(entry.name) ? [path] : [];
-  }));
-  return groups.flat();
-}
-function frontmatter(text) {
-  const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
-  if (!header)
-    return {};
-  return Object.fromEntries(header[1].split(/\r?\n/).flatMap((line) => {
-    const pair = /^([\w-]+):\s*(.*?)\s*$/.exec(line);
-    return pair ? [[pair[1], pair[2].replace(/^(['"])([\s\S]*)\1$/, "$2")]] : [];
-  }));
-}
-function plain(text) {
-  return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").replace(/<!--[\s\S]*?-->/g, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[#>*_`]/g, "").replace(/\s+/g, " ").trim();
-}
-function choiceLinks(text, source) {
-  const section = /^##\s+选项\s*$([\s\S]*?)(?=^#{1,2}\s|$(?![\s\S]))/m.exec(text)?.[1] ?? "";
-  return Array.from(section.matchAll(/^\s*(?:[-*+]\s+|\d+\.\s+)\[([^\]]+)\]\(([^)]+)\)/gm), ([, label, url]) => ({ label, path: resolve(dirname(source), decodeURIComponent(url.split("#")[0])) }));
-}
-function inside(root, path) {
-  const part = relative(root, path);
-  if (part === ".." || part.startsWith(".." + sep))
-    throw Error("剧情源超出项目范围：" + path);
-  return part.split(sep).join("/");
-}
-function backgroundAsset(value, assets) {
-  if (typeof value !== "string" || !/\.(png|jpe?g|webp|svg|avif)$/i.test(value))
-    return;
-  const path = value.startsWith("public/") ? value : "public/" + value.replace(/^\//, "");
-  return assets.get(path) || "asset:" + path;
-}
-function sceneRefs(source, assets) {
-  const ids = { speakerId: "people", npcId: "people", actorId: "people", relationId: "people", cardId: "cards", itemId: "shop", encounterId: "encounter", encounterResourceId: "encounter" };
-  const refs = new Map;
-  function visit(value) {
-    if (!value || typeof value !== "object")
-      return;
-    for (const [key, v] of Object.entries(value)) {
-      if (typeof v === "string") {
-        let note = ids[key], id = v;
-        if ((key.endsWith("Asset") || key === "portrait") && /\.(png|jpe?g|webp|svg|avif|mp3|ogg|wav)$/i.test(v)) {
-          const path = v.startsWith("public/") ? v : "public/" + v.replace(/^\//, "");
-          note = "media";
-          id = assets.get(path) || "asset:" + path;
-        }
-        if (note && id !== "player")
-          refs.set(note + ":" + id, { note, id });
-      } else
-        visit(v);
-    }
-  }
-  visit(source);
-  return [...refs.values()];
-}
-function markdownRefs(content, meta, assets) {
-  const values = [meta];
-  const parse = (text) => {
-    try {
-      values.push(JSON.parse(text));
-    } catch {}
-  };
-  Object.values(meta).filter((v) => /^[{[]/.test(v)).forEach(parse);
-  for (const m of content.matchAll(/<!--\s*story-[\w-]+:\s*([\s\S]*?)\s*-->/g))
-    parse(m[1]);
-  return sceneRefs(values, assets);
-}
-async function buildStory(gameRoot) {
-  const root = await realpath(gameRoot);
-  const catalog = JSON.parse(await readFile(join(root, "public/data/content-catalog.json"), "utf8"));
-  const assetsFile = join(root, "public/assets/asset-manifest.json");
-  const assets = await readFile(assetsFile, "utf8").then((text) => new Map(JSON.parse(text).assets.map((a) => [a.path, a.id])), (err) => {
-    if (err.code === "ENOENT")
-      return new Map;
-    throw err;
-  });
-  const graphs = [], byNode = new Map;
-  for (const resource of catalog.resources.filter((r) => r.kind === "story" || /^(storygraph|storycontent)$/i.test(r.kind))) {
-    const file = await realpath(resolve(root, "public", resource.publicPath));
-    const path = inside(root, file);
-    const graph = JSON.parse(await readFile(file, "utf8"));
-    if (!Array.isArray(graph.nodes))
-      continue;
-    const book = graph.title || resource.resourceId;
-    graphs.push({ book, path, resource, graph });
-    for (const node of graph.nodes) {
-      const list = byNode.get(node.id) ?? [];
-      list.push({ storyId: resource.resourceId, book });
-      byNode.set(node.id, list);
-    }
-  }
-  const rows = [], docs = new Map, authored = new Set, ids = new Set, pending = new Map;
-  for (const path of await listMarkdown(root)) {
-    const file = await realpath(join(root, path));
-    inside(root, file);
-    const text = await readFile(file, "utf8"), meta = frontmatter(text), scene = meta.scene === "true" && !!meta.nodeId;
-    const matches = scene ? byNode.get(meta.nodeId) ?? [] : [];
-    const graph = matches.find((m) => m.storyId === meta.storyId) ?? (matches.length === 1 ? matches[0] : undefined);
-    const storyId = meta.storyId || graph?.storyId || "";
-    const id = scene ? meta.nodeId : path;
-    if (docs.has(file) || ids.has(id))
-      throw Error("重复剧情记录：" + id);
-    const group = relative("knowledge", dirname(path)).split(sep).filter(Boolean);
-    const folders = scene ? [graph?.book || meta.storyTitle || storyId || "未归卷剧情", ...group.length ? group : [], meta.chapter || "未分章", ...meta.act ? [meta.act] : []] : ["资料", ...group];
-    const title = meta.title || /^#\s+(.+)$/m.exec(text)?.[1] || path.split("/").pop();
-    const row = { id, title, path, folders, body: text, search: plain(text), choices: [], refs: markdownRefs(text, meta, assets), backgroundAssetId: backgroundAsset(meta.backgroundAsset, assets), ...scene ? { storyId, nodeId: meta.nodeId } : {} };
-    rows.push(row);
-    docs.set(file, row);
-    ids.add(id);
-    if (scene && storyId)
-      authored.add(JSON.stringify([storyId, meta.nodeId]));
-    if (scene)
-      pending.set(row, choiceLinks(text, file));
-  }
-  for (const [row, targets] of pending) {
-    row.choices = targets.flatMap((edge) => docs.has(edge.path) ? [{ label: edge.label, to: docs.get(edge.path).id }] : []);
-  }
-  for (const { book, path, graph, resource } of graphs) {
-    const route = (id) => authored.has(JSON.stringify([resource.resourceId, id])) ? id : resource.resourceId + "::" + id;
-    for (const node of graph.nodes) {
-      if (authored.has(JSON.stringify([resource.resourceId, node.id])))
-        continue;
-      const choices = (graph.choices ?? []).filter((c) => c.from === node.id);
-      const words = [node.title, node.summary, node.detail, node.body, ...(node.dialogues ?? []).flatMap((d) => [d.speakerName, d.text]), ...choices.map((c) => c.text)];
-      rows.push({
-        id: route(node.id),
-        title: node.title || node.id,
-        path,
-        folders: [book, node.chapter || "正文", ...node.act ? [node.act] : []],
-        refs: sceneRefs([node, ...choices], assets),
-        backgroundAssetId: backgroundAsset(node.backgroundAsset, assets),
-        body: JSON.stringify({ nodes: [node], choices }),
-        search: words.filter(Boolean).join(" "),
-        choices: choices.map((c) => ({ label: c.text || c.id, to: route(c.to) })),
-        storyId: resource.resourceId,
-        nodeId: node.id
-      });
-    }
-  }
-  const launched = [];
-  for (const resource of catalog.resources.filter((r) => r.kind === "hub")) {
-    const file = await realpath(resolve(root, "public", resource.publicPath));
-    inside(root, file);
-    const hub = JSON.parse(await readFile(file, "utf8"));
-    const locations = Array.isArray(hub.locations) ? hub.locations : [];
-    for (const location of [...locations.filter((l) => l.id === hub.defaultLocationId), ...locations.filter((l) => l.id !== hub.defaultLocationId)])
-      for (const action of location.actions ?? [])
-        if (action.kind === "startStory" && typeof action.storyResourceId === "string")
-          launched.push(action.storyResourceId);
-  }
-  const isMainline = ({ graph }) => {
-    const tags = graph.nodes.find((node) => node.id === graph.entryNodeId)?.tags ?? [];
-    return tags.includes("主线") && !tags.some((tag) => ["教学", "教程", "示例"].includes(tag));
-  };
-  const ordered = [...graphs.filter((g) => launched.includes(g.resource.resourceId) && isMainline(g)), ...graphs.filter(isMainline), ...graphs];
-  const initialId = ordered.map(({ graph, resource }) => rows.find((row) => row.storyId === resource.resourceId && row.nodeId === graph.entryNodeId)?.id).find(Boolean) || rows.find((row) => row.nodeId)?.id || rows[0]?.id;
-  return { initialState: {}, initialConfig: {
-    resources: [{ title: "CardGame", path: join(root, "knowledge/index.md"), root, linkBase: root }],
-    storyIndex: rows,
-    initialScene: initialId ?? ""
-  } };
-}
-function boundStoryConfig(config) {
-  if (!config.resources?.length)
-    throw Error("剧情知识库缺少已绑定的项目资料入口。");
-  return { ...config, storyIndex: config.storyIndex.map((row) => ({ ...row, body: "" })) };
-}
-
-// .tmp/worka-cardgame-studio/tools/catalog-index.mjs
+// tools/catalog-index.mjs
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join as join2, basename, extname } from "node:path";
+import { join, basename, extname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 var kinds = ["map", "encounter", "cards", "monsters", "people", "shop", "media"];
@@ -206,14 +25,14 @@ var fields = (obj) => Object.entries(obj).filter(([, v]) => v !== null && v !== 
 var section = (title, lines) => ({ title, lines: words(lines) });
 var ref = (note, id) => ({ note, id });
 function walk(root, dir) {
-  if (!existsSync(join2(root, dir)))
+  if (!existsSync(join(root, dir)))
     return [];
-  return readdirSync(join2(root, dir), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, "en")).flatMap((e) => {
+  return readdirSync(join(root, dir), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name, "en")).flatMap((e) => {
     const path = dir + "/" + e.name;
     return e.isDirectory() ? walk(root, path) : e.isFile() ? [path] : [];
   });
 }
-var parse = (root, file) => JSON.parse(readFileSync(join2(root, file), "utf8"));
+var parse = (root, file) => JSON.parse(readFileSync(join(root, file), "utf8"));
 function git(root, ...args) {
   try {
     return execFileSync("git", ["-c", "core.fsmonitor=false", "-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 64 * 1024 * 1024 }).trimEnd();
@@ -243,15 +62,26 @@ function assetType(path, meta) {
     return "背景";
   return "素材图";
 }
-function buildCatalog(root) {
+function buildCatalog(root, { hashCache, gitCache } = {}) {
   const rows = Object.fromEntries(kinds.map((k) => [k, new Map]));
   const head = git(root, "rev-parse", "HEAD");
-  const remote = git(root, "config", "--get", "remote.origin.url").match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
-  const tracked = new Map(git(root, "ls-tree", "-rz", "HEAD", "--", "public", "art-references").split("\x00").flatMap((line) => {
-    const match = /^100\d+ blob ([a-f0-9]+)\t([\s\S]+)$/.exec(line);
-    return match ? [[match[2], match[1]]] : [];
-  }));
-  const base = remote && head ? "https://raw.githubusercontent.com/" + remote[1] + "/" + remote[2] + "/" + head + "/" : "";
+  let base = "", tracked = new Map;
+  if (gitCache && gitCache.head === head) {
+    base = gitCache.base;
+    tracked = gitCache.tracked;
+  } else {
+    const remote = git(root, "config", "--get", "remote.origin.url").match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
+    tracked = new Map(git(root, "ls-tree", "-rz", "HEAD", "--", "public", "art-references").split("\x00").flatMap((line) => {
+      const match = /^100\d+ blob ([a-f0-9]+)\t([\s\S]+)$/.exec(line);
+      return match ? [[match[2], match[1]]] : [];
+    }));
+    base = remote && head ? "https://raw.githubusercontent.com/" + remote[1] + "/" + remote[2] + "/" + head + "/" : "";
+    if (gitCache) {
+      gitCache.head = head;
+      gitCache.base = base;
+      gitCache.tracked = tracked;
+    }
+  }
   function add(note, id, title, group, source, body = "") {
     if (typeof id !== "string" || !id.length)
       throw new Error("Missing record ID: " + source);
@@ -266,18 +96,25 @@ function buildCatalog(root) {
     throw new Error("CardGame 项目缺少 public/data/cards/units.json");
   const jsons = new Map(data.map((f) => [f, parse(root, f)]));
   const dataFiles = (dir) => [...jsons].filter(([f]) => f.startsWith("public/data/" + dir + "/"));
-  const manifest = existsSync(join2(root, "public/assets/asset-manifest.json")) ? parse(root, "public/assets/asset-manifest.json") : {};
+  const manifest = existsSync(join(root, "public/assets/asset-manifest.json")) ? parse(root, "public/assets/asset-manifest.json") : {};
   const assetMeta = new Map((manifest.assets || []).map((a) => [a.path, a]));
   const assetByPath = new Map, titlesByUse = new Map;
   for (const f of [...walk(root, "public"), ...walk(root, "art-references")].filter((f) => image.test(f) || audio.test(f))) {
     const a = assetMeta.get(f), usage = assetType(f, JSON.stringify(a?.metadata || {})), id = a?.id || "asset:" + f;
     const row = add("media", id, a?.metadata?.name || a?.metadata?.title || basename(f), usage, f);
-    const bytes = readFileSync(join2(root, f)), digest = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-    row.mediaKey = f + "?v=" + digest;
+    const full = join(root, f), st = statSync(full), oid = tracked.get(f);
+    let cached = hashCache?.get(f);
+    if (!cached || cached.size !== st.size || cached.mtimeMs !== st.mtimeMs || cached.oidKind !== (oid?.length || 0)) {
+      const bytes = readFileSync(full);
+      const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+      const blobOid = oid ? createHash(oid.length === 64 ? "sha256" : "sha1").update("blob " + bytes.length + "\x00").update(bytes).digest("hex") : "";
+      cached = { size: st.size, mtimeMs: st.mtimeMs, digest, oidKind: oid?.length || 0, blobOid };
+      hashCache?.set(f, cached);
+    }
+    row.mediaKey = f + "?v=" + cached.digest;
     row.facets = labels({ "媒介": audio.test(f) ? "声音" : "图像", "用途": usage, "格式": extname(f).slice(1).toUpperCase(), "目录": f.split("/").slice(0, 3).join("/"), "标签": a?.tags });
-    row.fields = fields({ "文件": f, "大小": statSync(join2(root, f)).size + " B", "当前版本": a?.currentVersionId });
-    const oid = tracked.get(f);
-    if (base && oid && createHash(oid.length === 64 ? "sha256" : "sha1").update("blob " + bytes.length + "\x00").update(bytes).digest("hex") === oid)
+    row.fields = fields({ "文件": f, "大小": st.size + " B", "当前版本": a?.currentVersionId });
+    if (base && oid && cached.blobOid === oid)
       row.mediaUrl = base + encodePath(f);
     row.sections = [section("版本", (a?.versions || []).map((v) => v.path + " · " + v.revision.slice(0, 12)))];
     assetByPath.set(f, row);
@@ -438,7 +275,6 @@ function buildCatalog(root) {
         }
       });
     }
-  const hash = createHash("sha256");
   for (const [kind, dict] of Object.entries(rows))
     for (const row of dict.values()) {
       const seen = new Set;
@@ -452,10 +288,8 @@ function buildCatalog(root) {
       row.sections = row.sections.filter((s) => s.lines.length);
       if (!row.thumbnail)
         delete row.thumbnail;
-      hash.update(kind + "\x00" + JSON.stringify(row));
     }
-  const revision = hash.digest("hex");
-  return Object.fromEntries(kinds.map((kind) => [kind, { initialState: {}, initialConfig: { kind, revision, records: [...rows[kind].values()] } }]));
+  return Object.fromEntries(kinds.map((kind) => [kind, { initialState: {}, initialConfig: { kind, records: [...rows[kind].values()] } }]));
 }
 function catalogLinks(catalog) {
   const all = new Map, result = new Map;
@@ -479,55 +313,301 @@ function catalogLinks(catalog) {
   return [...result.values()];
 }
 
-// .tmp/worka-cardgame-studio/tools/studio.mjs
-var catalogKeys = ["map", "encounter", "cards", "monsters", "people", "shop", "media"];
-var referenceNotes = ["story", ...catalogKeys, "preview"];
-var json = async (file) => JSON.parse(await readFile2(file, "utf8"));
-async function projectData(root) {
-  const commit = execFileSync2("git", ["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], { encoding: "utf8" }).trim();
-  const [story, catalog, registry] = await Promise.all([buildStory(root), buildCatalog(root), json(join3(root, "public/data/content-catalog.json"))]);
-  const links = catalogLinks(catalog);
-  const graph = (n, id, t, other, label) => links.push({ source: { noteId: n, recordId: id }, target: { noteId: t, recordId: other }, label });
-  const play = (n, id, entry, label) => graph(n, id, "preview", "play:" + JSON.stringify(entry), label);
-  const records = Object.fromEntries(Object.entries(catalog).map(([key, n]) => [key, new Map(n.initialConfig.records.map((row) => [row.id, row]))]));
-  for (const scene of story.initialConfig.storyIndex) {
-    for (const ref of scene.refs || []) {
-      const target = records[ref.note]?.get(ref.id);
-      if (!target)
-        continue;
-      graph("story", scene.id, ref.note, ref.id, target.title);
-      graph(ref.note, ref.id, "story", scene.id, scene.title);
-    }
-    if (scene.nodeId && scene.storyId)
-      play("story", scene.id, { kind: "story", resourceId: scene.storyId, nodeId: scene.nodeId }, "试玩此场景");
-  }
-  const byPath = new Map(registry.resources.map((r) => ["public/" + r.publicPath.replace(/^\/+/, ""), r]));
-  for (const key of ["map", "encounter"]) {
-    for (const row of records[key].values()) {
-      const [file, pointer] = row.source.split("#"), resource = byPath.get(file);
-      if (!resource)
-        continue;
-      const encounter = key === "map" && pointer && row.refs.find((x) => x.note === "encounter");
-      if (encounter) {
-        const battle = records.encounter.get(encounter.id);
-        const entry = byPath.get(battle?.source.split("#")[0]);
-        if (entry) {
-          play(key, row.id, { kind: "encounter", resourceId: entry.resourceId }, "试玩此战斗");
-          continue;
+// tools/story-index.mjs
+import { readFile, readdir, realpath } from "node:fs/promises";
+import { dirname, join as join2, relative, resolve, sep } from "node:path";
+async function listMarkdown(root, dir = "knowledge") {
+  const entries = await readdir(join2(root, dir), { withFileTypes: true });
+  const groups = await Promise.all(entries.sort((a, b) => a.name.localeCompare(b.name)).map((entry) => {
+    const path = dir + "/" + entry.name;
+    if (entry.isDirectory())
+      return listMarkdown(root, path);
+    return entry.isFile() && /\.md(?:own|arkdown)?$/i.test(entry.name) ? [path] : [];
+  }));
+  return groups.flat();
+}
+function frontmatter(text) {
+  const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
+  if (!header)
+    return {};
+  return Object.fromEntries(header[1].split(/\r?\n/).flatMap((line) => {
+    const pair = /^([\w-]+):\s*(.*?)\s*$/.exec(line);
+    return pair ? [[pair[1], pair[2].replace(/^(['"])([\s\S]*)\1$/, "$2")]] : [];
+  }));
+}
+function plain(text) {
+  return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").replace(/<!--[\s\S]*?-->/g, "").replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[#>*_`]/g, "").replace(/\s+/g, " ").trim();
+}
+function choiceLinks(text, source) {
+  const section = /^##\s+选项\s*$([\s\S]*?)(?=^#{1,2}\s|$(?![\s\S]))/m.exec(text)?.[1] ?? "";
+  return Array.from(section.matchAll(/^\s*(?:[-*+]\s+|\d+\.\s+)\[([^\]]+)\]\(([^)]+)\)/gm), ([, label, url]) => ({ label, path: resolve(dirname(source), decodeURIComponent(url.split("#")[0])) }));
+}
+function inside(root, path) {
+  const part = relative(root, path);
+  if (part === ".." || part.startsWith(".." + sep))
+    throw Error("剧情源超出项目范围：" + path);
+  return part.split(sep).join("/");
+}
+function backgroundAsset(value, assets) {
+  if (typeof value !== "string" || !/\.(png|jpe?g|webp|svg|avif)$/i.test(value))
+    return;
+  const path = value.startsWith("public/") ? value : "public/" + value.replace(/^\//, "");
+  return assets.get(path) || "asset:" + path;
+}
+function sceneRefs(source, assets) {
+  const ids = { speakerId: "people", npcId: "people", actorId: "people", relationId: "people", cardId: "cards", itemId: "shop", encounterId: "encounter", encounterResourceId: "encounter" };
+  const refs = new Map;
+  function visit(value) {
+    if (!value || typeof value !== "object")
+      return;
+    for (const [key, v] of Object.entries(value)) {
+      if (typeof v === "string") {
+        let note = ids[key], id = v;
+        if ((key.endsWith("Asset") || key === "portrait") && /\.(png|jpe?g|webp|svg|avif|mp3|ogg|wav)$/i.test(v)) {
+          const path = v.startsWith("public/") ? v : "public/" + v.replace(/^\//, "");
+          note = "media";
+          id = assets.get(path) || "asset:" + path;
         }
-      }
-      play(key, row.id, { kind: key, resourceId: resource.resourceId }, key === "encounter" ? "试玩此战斗" : "从秘境入口试玩");
+        if (note && id !== "player")
+          refs.set(note + ":" + id, { note, id });
+      } else
+        visit(v);
     }
   }
-  return { commit, catalog, story, links };
+  visit(source);
+  return [...refs.values()];
+}
+function markdownRefs(content, meta, assets) {
+  const values = [meta];
+  const parse = (text) => {
+    try {
+      values.push(JSON.parse(text));
+    } catch {}
+  };
+  Object.values(meta).filter((v) => /^[{[]/.test(v)).forEach(parse);
+  for (const m of content.matchAll(/<!--\s*story-[\w-]+:\s*([\s\S]*?)\s*-->/g))
+    parse(m[1]);
+  return sceneRefs(values, assets);
+}
+async function buildStory(gameRoot) {
+  const root = await realpath(gameRoot);
+  const catalog = JSON.parse(await readFile(join2(root, "public/data/content-catalog.json"), "utf8"));
+  const assetsFile = join2(root, "public/assets/asset-manifest.json");
+  const assets = await readFile(assetsFile, "utf8").then((text) => new Map(JSON.parse(text).assets.map((a) => [a.path, a.id])), (err) => {
+    if (err.code === "ENOENT")
+      return new Map;
+    throw err;
+  });
+  const graphs = [], byNode = new Map;
+  for (const resource of catalog.resources.filter((r) => r.kind === "story" || /^(storygraph|storycontent)$/i.test(r.kind))) {
+    const file = await realpath(resolve(root, "public", resource.publicPath));
+    const path = inside(root, file);
+    const graph = JSON.parse(await readFile(file, "utf8"));
+    if (!Array.isArray(graph.nodes))
+      continue;
+    const book = graph.title || resource.resourceId;
+    graphs.push({ book, path, resource, graph });
+    for (const node of graph.nodes) {
+      const list = byNode.get(node.id) ?? [];
+      list.push({ storyId: resource.resourceId, book });
+      byNode.set(node.id, list);
+    }
+  }
+  const rows = [], docs = new Map, authored = new Set, ids = new Set, pending = new Map;
+  for (const path of await listMarkdown(root)) {
+    const file = await realpath(join2(root, path));
+    inside(root, file);
+    const text = await readFile(file, "utf8"), meta = frontmatter(text), scene = meta.scene === "true" && !!meta.nodeId;
+    const matches = scene ? byNode.get(meta.nodeId) ?? [] : [];
+    const graph = matches.find((m) => m.storyId === meta.storyId) ?? (matches.length === 1 ? matches[0] : undefined);
+    const storyId = meta.storyId || graph?.storyId || "";
+    const id = scene ? meta.nodeId : path;
+    if (docs.has(file) || ids.has(id))
+      throw Error("重复剧情记录：" + id);
+    const group = relative("knowledge", dirname(path)).split(sep).filter(Boolean);
+    const folders = scene ? [graph?.book || meta.storyTitle || storyId || "未归卷剧情", ...group.length ? group : [], meta.chapter || "未分章", ...meta.act ? [meta.act] : []] : ["资料", ...group];
+    const title = meta.title || /^#\s+(.+)$/m.exec(text)?.[1] || path.split("/").pop();
+    const row = { id, title, path, folders, body: text, search: plain(text), choices: [], refs: markdownRefs(text, meta, assets), backgroundAssetId: backgroundAsset(meta.backgroundAsset, assets), ...scene ? { storyId, nodeId: meta.nodeId } : {} };
+    rows.push(row);
+    docs.set(file, row);
+    ids.add(id);
+    if (scene && storyId)
+      authored.add(JSON.stringify([storyId, meta.nodeId]));
+    if (scene)
+      pending.set(row, choiceLinks(text, file));
+  }
+  for (const [row, targets] of pending) {
+    row.choices = targets.flatMap((edge) => docs.has(edge.path) ? [{ label: edge.label, to: docs.get(edge.path).id }] : []);
+  }
+  for (const { book, path, graph, resource } of graphs) {
+    const route = (id) => authored.has(JSON.stringify([resource.resourceId, id])) ? id : resource.resourceId + "::" + id;
+    for (const node of graph.nodes) {
+      if (authored.has(JSON.stringify([resource.resourceId, node.id])))
+        continue;
+      const choices = (graph.choices ?? []).filter((c) => c.from === node.id);
+      const words = [node.title, node.summary, node.detail, node.body, ...(node.dialogues ?? []).flatMap((d) => [d.speakerName, d.text]), ...choices.map((c) => c.text)];
+      rows.push({
+        id: route(node.id),
+        title: node.title || node.id,
+        path,
+        folders: [book, node.chapter || "正文", ...node.act ? [node.act] : []],
+        refs: sceneRefs([node, ...choices], assets),
+        backgroundAssetId: backgroundAsset(node.backgroundAsset, assets),
+        body: JSON.stringify({ nodes: [node], choices }),
+        search: words.filter(Boolean).join(" "),
+        choices: choices.map((c) => ({ label: c.text || c.id, to: route(c.to) })),
+        storyId: resource.resourceId,
+        nodeId: node.id
+      });
+    }
+  }
+  const launched = [];
+  for (const resource of catalog.resources.filter((r) => r.kind === "hub")) {
+    const file = await realpath(resolve(root, "public", resource.publicPath));
+    inside(root, file);
+    const hub = JSON.parse(await readFile(file, "utf8"));
+    const locations = Array.isArray(hub.locations) ? hub.locations : [];
+    for (const location of [...locations.filter((l) => l.id === hub.defaultLocationId), ...locations.filter((l) => l.id !== hub.defaultLocationId)])
+      for (const action of location.actions ?? [])
+        if (action.kind === "startStory" && typeof action.storyResourceId === "string")
+          launched.push(action.storyResourceId);
+  }
+  const isMainline = ({ graph }) => {
+    const tags = graph.nodes.find((node) => node.id === graph.entryNodeId)?.tags ?? [];
+    return tags.includes("主线") && !tags.some((tag) => ["教学", "教程", "示例"].includes(tag));
+  };
+  const ordered = [...graphs.filter((g) => launched.includes(g.resource.resourceId) && isMainline(g)), ...graphs.filter(isMainline), ...graphs];
+  const initialId = ordered.map(({ graph, resource }) => rows.find((row) => row.storyId === resource.resourceId && row.nodeId === graph.entryNodeId)?.id).find(Boolean) || rows.find((row) => row.nodeId)?.id || rows[0]?.id;
+  return { initialState: {}, initialConfig: {
+    storyIndex: rows,
+    initialScene: initialId ?? ""
+  } };
 }
 
-// .tmp/worka-cardgame-studio/provider/index.mjs
+// notes/catalog/search.ts
+var normalized = (text) => text.normalize("NFKC").toLocaleLowerCase().trim();
+var compare = (a, b) => a.localeCompare(b, "zh-CN", { numeric: true });
+function search(rows, criteria) {
+  const q = normalized(criteria.q || ""), words = q.split(/\s+/).filter(Boolean), filters = criteria.filters || {};
+  const found = [], counts = new Map;
+  const dimensions = new Set;
+  for (const row of rows) {
+    for (const field of Object.keys(row.facets))
+      dimensions.add(field);
+    const text = normalized([row.title, row.id, row.source, row.body, ...Object.values(row.facets).flat(), ...row.fields.map((f) => f.value), ...row.sections.flatMap((s) => s.lines)].join(" "));
+    if (!words.every((w) => text.includes(w)))
+      continue;
+    const missing = Object.keys(filters).filter((k) => filters[k]?.length && !filters[k].some((v) => row.facets[k]?.includes(v)));
+    if (missing.length > 1)
+      continue;
+    for (const [k, opts] of Object.entries(row.facets)) {
+      if (missing.length && missing[0] !== k)
+        continue;
+      if (!counts.has(k))
+        counts.set(k, new Map);
+      const group = counts.get(k);
+      for (const value of opts)
+        group.set(value, (group.get(value) || 0) + 1);
+    }
+    if (!missing.length) {
+      const name = normalized(row.title), id = normalized(row.id);
+      found.push({ row, rank: q && (name === q || id === q) ? 3 : q && name.includes(q) ? 2 : q && id.includes(q) ? 1 : 0 });
+    }
+  }
+  if (criteria.sort === "name")
+    found.sort((a, b) => compare(a.row.title, b.row.title));
+  else if (q)
+    found.sort((a, b) => b.rank - a.rank);
+  const size = Math.max(1, Math.min(48, criteria.size || 24)), pages = Math.max(1, Math.ceil(found.length / size)), page = Math.max(1, Math.min(pages, criteria.page || 1));
+  const facetNeedle = normalized(criteria.facetQuery || "");
+  const facets = [...dimensions].map((key) => {
+    const choices = [...new Set([...filters[key] || [], ...counts.get(key)?.keys() || []])].filter((v) => normalized(v).includes(facetNeedle));
+    const options = choices.map((value) => ({ value, count: counts.get(key)?.get(value) || 0 })).sort((a, b) => b.count - a.count || compare(a.value, b.value));
+    return { key, options: options.slice(0, 30), hasMore: options.length > 30 };
+  });
+  const items = found.slice((page - 1) * size, page * size).map(({ row }) => ({ id: row.id, title: row.title, group: row.group, body: row.body.slice(0, 150), mediaKey: row.mediaKey || null, thumbnail: row.thumbnail || null, summary: row.fields.slice(0, 2).filter((f) => f.name !== "文件").map((f) => f.name + " " + f.value).join(" · ") }));
+  return { total: rows.length, count: found.length, page, pages, items, facets };
+}
+
+// notes/catalog/home.ts
+var audio2 = (row) => row.facets["媒介"]?.includes("声音") || /\.(?:mp3|aac|wav|oga|ogg|flac|m4a)$/i.test(row.source);
+function cap(row) {
+  return {
+    ...row,
+    body: row.body.slice(0, 260),
+    sections: row.sections.slice(0, 6).map((s) => ({ ...s, lines: s.lines.slice(0, 7) })),
+    refs: row.refs.slice(0, 8),
+    fields: row.fields.slice(0, 12),
+    diagram: row.diagram?.slice(0, 7)
+  };
+}
+function homeRecords(kind, rows) {
+  let records = [];
+  if (kind === "cards") {
+    const cards = rows.filter((r) => r.group !== "牌组");
+    const hasArt = new Set(cards.filter((r) => r.mediaKey || r.thumbnail).map((r) => r.id));
+    const score = (row) => row.refs.filter((ref) => ref.note === "cards" && hasArt.has(ref.id)).length;
+    const deck = rows.filter((r) => r.group === "牌组").sort((a, b) => score(b) - score(a))[0];
+    const pool = deck ? cards.filter((r) => deck.refs.some((ref) => ref.note === "cards" && ref.id === r.id)) : cards;
+    const pictured = pool.filter((r) => r.mediaKey || r.thumbnail), plain = pool.filter((r) => !r.mediaKey && !r.thumbnail);
+    records = [...deck ? [deck] : [], ...[...pictured, ...plain].slice(0, 6)];
+  } else if (kind === "media") {
+    const portrait = rows.find((r) => r.group === "人设" || r.group === "立绘"), background = rows.find((r) => r.group === "背景"), sound = rows.find(audio2);
+    records = [...new Set([portrait, background, sound, ...rows].filter((r) => !!r))].slice(0, 3);
+  } else {
+    const focus = (kind === "map" ? rows.find((r) => r.diagram?.length) : kind === "encounter" ? rows.find((r) => r.portraits?.some((p) => p.mediaKey || p.thumbnail)) : rows.find((r) => r.mediaKey || r.thumbnail)) || rows[0];
+    if (focus) {
+      records = [focus];
+      if (kind === "shop") {
+        const offer = rows.find((r) => r.group === "货架" && r.refs.some((x) => x.note === "shop" && x.id === focus.id));
+        if (offer)
+          records.push(offer);
+      }
+    }
+  }
+  return { kind, count: rows.length, records: records.map(cap) };
+}
+
+// notes/story/story-tree.ts
+function storyTree(rows) {
+  const root = { key: "[]", name: "全书", folders: new Map, scenes: [] };
+  const branches = new Map([[root.key, root]]), parents = new Map;
+  for (const row of rows) {
+    let here = root;
+    const names = [];
+    for (const name of row.folders) {
+      names.push(name);
+      const key = JSON.stringify(names);
+      if (!here.folders.has(name)) {
+        const item = { key, name, parent: here, folders: new Map, scenes: [] };
+        here.folders.set(name, item);
+        branches.set(key, item);
+      }
+      here = here.folders.get(name);
+    }
+    here.scenes.push(row);
+    parents.set(row.id, here);
+  }
+  return { root, branches, parents };
+}
+function ancestors(node) {
+  const result = [];
+  while (node) {
+    result.unshift(node);
+    node = node.parent;
+  }
+  return result;
+}
+
+// provider/index.mjs
 var name = "game-project";
 var inject = ["worka"];
+var catalogKinds = ["map", "encounter", "cards", "monsters", "people", "shop", "media"];
+var contentKinds = ["story", ...catalogKinds];
 var digest = (value) => createHash2("sha256").update(value).digest("hex");
 var run = promisify(execFile);
-var missingMessage = "在本桌面对话选择已有 CardGame 的绝对路径，或确认默认仓库 https://github.com/kllilizxc/CardGame。使用 extension.invoke，extension 为 game-project，method 为 bind，input.source 为选定的目录或 HTTPS GitHub 地址。";
+var defaultRepo = "https://github.com/kllilizxc/CardGame";
+var missingMessage = `只问用户一个问题来选择 CardGame 游戏来源（默认仓库 ${defaultRepo}，会自动克隆；也可选择本机已检出的 CardGame 目录），然后用 extension.invoke({extension:"game-project",method:"bind",input:{source}}) 绑定。`;
 function contained(root, file) {
   const part = relative2(root, file);
   if (isAbsolute(part) || part === ".." || part.startsWith(".." + sep2))
@@ -535,7 +615,7 @@ function contained(root, file) {
   return file;
 }
 async function inside2(root, path) {
-  return contained(root, await realpath2(join4(root, path)));
+  return contained(root, await realpath2(join3(root, path)));
 }
 function regularRemote(value) {
   const url = new URL(value);
@@ -554,7 +634,7 @@ async function checkout(source, dir, signal) {
       throw Error("请选择 Git 工作树的根目录");
     return root;
   }
-  const url = regularRemote(source), managed = join4(dir, "repos", digest(url));
+  const url = regularRemote(source), managed = join3(dir, "repos", digest(url));
   await mkdir(dirname2(managed), { recursive: true });
   try {
     await access(managed);
@@ -565,7 +645,7 @@ async function checkout(source, dir, signal) {
     if (err.code !== "ENOENT")
       throw err;
   }
-  const temp = await mkdtemp(join4(dirname2(managed), ".clone-"));
+  const temp = await mkdtemp(join3(dirname2(managed), ".clone-"));
   try {
     try {
       await git2(["clone", "--no-checkout", "--no-recurse-submodules", "--", url, temp], signal);
@@ -587,131 +667,451 @@ async function checkout(source, dir, signal) {
   return await realpath2(managed);
 }
 var recordKey = (id) => "cardgame.project/" + digest(id);
-var kindOf = (project, noteId) => referenceNotes.find((key) => project?.noteIds?.[key] === noteId);
-var sourceOf = (app, id, caller, signal) => app.dispatch("desktop.source", { desktopId: id }, caller, signal);
+async function binding(app, id) {
+  return id ? (await app.core.readRecord("states", recordKey(id)))?.value : undefined;
+}
 function writable(caller) {
-  if (!caller || caller.readOnly || caller.dryRun || caller.replay || caller.skillCause || !["user", "agent"].includes(caller.kind))
-    throw Error("需要当前桌面的可写用户对话");
+  if (!caller || caller.readOnly || caller.dryRun || caller.replay || !["user", "agent"].includes(caller.kind))
+    throw Error("需要可写调用");
 }
 async function desktopForCommand(app, caller, requested) {
   writable(caller);
-  if (caller.noteId || caller.controlNoteId)
-    throw Error("请选择桌面级的游戏项目设置");
   const connection = caller.providerConnection;
-  if (connection && (caller.kind !== "agent" || !caller.sessionId || connection.provider !== name || connection.connectionId !== name || !connection.desktopId))
+  if (connection && (connection.provider !== name || connection.connectionId !== name || !connection.desktopId))
     throw Error("当前对话未绑定此游戏项目连接");
-  if (caller.kind === "user" && !caller.sessionId) {
-    if (typeof requested !== "string" || !requested.trim())
-      throw Error("请选择目标桌面");
-    return requested;
+  let desktopId = connection?.desktopId;
+  const noteId = caller.controlNoteId || caller.noteId;
+  if (noteId) {
+    const note = (await app.core.getNote(noteId))?.value;
+    if (!note?.desktopId || note.archived)
+      throw Error("游戏便笺不可用");
+    if (desktopId && desktopId !== note.desktopId)
+      throw Error("游戏项目连接不属于当前桌面");
+    desktopId = note.desktopId;
   }
-  const s = (await app.core.getSession(caller.sessionId))?.value;
-  if (!s?.desktopId || s.noteId || s.skillConnectionId || s.delegationId || s.purpose || s.contextMode === "task" || s.agentObject || s.parentSessionId || caller.noteId || requested && requested !== s.desktopId)
-    throw Error("请通过当前桌面的原生对话连接项目");
-  if (connection && connection.desktopId !== s.desktopId)
-    throw Error("游戏项目连接不属于当前桌面");
-  return s.desktopId;
+  if (caller.sessionId) {
+    const s = (await app.core.getSession(caller.sessionId))?.value;
+    const sessionDesktop = s?.desktopId || (s?.noteId ? (await app.core.getNote(s.noteId))?.value?.desktopId : undefined);
+    if (sessionDesktop) {
+      if (desktopId && desktopId !== sessionDesktop)
+        throw Error("游戏项目连接不属于当前桌面");
+      desktopId = sessionDesktop;
+    }
+  }
+  if (typeof requested === "string" && requested.trim()) {
+    if (desktopId && desktopId !== requested.trim())
+      throw Error("请选择当前桌面");
+    desktopId = requested.trim();
+  }
+  if (!desktopId)
+    throw Error("请选择目标桌面");
+  return desktopId;
 }
-async function binding(app, id) {
-  return (await app.core.readRecord("states", recordKey(id)))?.value;
+function ignoredWatchPath(filename) {
+  if (!filename)
+    return false;
+  const normalized = String(filename).split(sep2).join("/");
+  if (normalized === "node_modules" || normalized.startsWith("node_modules/"))
+    return true;
+  if (normalized === ".git" || normalized.startsWith(".git/")) {
+    return !(normalized === ".git/HEAD" || normalized === ".git/packed-refs" || normalized.startsWith(".git/refs/"));
+  }
+  return false;
 }
-async function links(app, caller, project, items, signal) {
-  const id = project.relationIds?.references;
-  if (!id)
-    return;
-  const desired = items.filter((l) => project.noteIds[l.source.noteId] && project.noteIds[l.target.noteId] && (project.noteIds[l.source.noteId] !== project.noteIds[l.target.noteId] || l.source.recordId !== l.target.recordId)).map(({ source, target, label }) => ({
-    source: { noteId: project.noteIds[source.noteId], recordId: source.recordId },
-    target: { noteId: project.noteIds[target.noteId], recordId: target.recordId },
-    ...label ? { label } : {}
-  }));
-  const rel = await app.dispatch("connection.get", { id }, caller, signal);
-  const prior = rel.links;
-  if (prior !== undefined && JSON.stringify(prior) === JSON.stringify(desired))
-    return async () => {};
-  await app.dispatch("connection.update", { id, revision: String(rel.revision), change: { links: desired } }, caller, signal);
-  return async () => {
-    const latest = await app.dispatch("connection.get", { id }, caller);
-    if (JSON.stringify(latest.links ?? []) !== JSON.stringify(desired))
-      return;
-    await app.dispatch("connection.update", { id, revision: String(latest.revision), change: { links: prior ?? [] } }, caller);
-  };
+function excerpt(text = "", fallback = "") {
+  const line = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").split(/\r?\n/).find((item) => item.trim() && !/^[\s#>{[\]-]/.test(item));
+  return (line?.slice(0, 150) || fallback.slice(0, 140)).trim();
 }
-function projectFiles(data, root, adapter) {
-  return {
-    ...Object.fromEntries(Object.entries(data.catalog).map(([k, v]) => [k, v.initialConfig])),
-    story: boundStoryConfig(data.story.initialConfig),
-    preview: { gameCommit: data.commit, gameRoot: root, adapter, coverAsset: data.catalog.media.initialConfig.records.find((row) => row.source === "public/assets/bg.png")?.id }
-  };
-}
+var formats = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".avif": "image/avif",
+  ".bmp": "image/bmp",
+  ".svg": "image/svg+xml",
+  ".mp3": "audio/mpeg",
+  ".wav": "audio/wav",
+  ".ogg": "audio/ogg",
+  ".oga": "audio/ogg",
+  ".m4a": "audio/mp4",
+  ".aac": "audio/aac",
+  ".flac": "audio/flac",
+  ".opus": "audio/ogg"
+};
 function gameProject(host) {
-  const app = host.app, pending = new Map;
+  const app = host.app, pending = new Map, watchers = new Map, fileCaches = new Map;
+  let closing = false;
   function directory(id) {
-    return join4(host.dataRoot, "providers", name, digest(id));
+    return join3(host.dataRoot, "providers", name, digest(id));
+  }
+  function cachesFor(root) {
+    let entry = fileCaches.get(root);
+    if (!entry) {
+      entry = { hashCache: new Map, gitCache: {} };
+      fileCaches.set(root, entry);
+    }
+    return entry;
+  }
+  async function computeProjection(root) {
+    const { hashCache, gitCache } = cachesFor(root);
+    const [story, catalog] = await Promise.all([buildStory(root), Promise.resolve().then(() => buildCatalog(root, { hashCache, gitCache }))]);
+    const catalogByKind = Object.fromEntries(catalogKinds.map((k) => [k, catalog[k].initialConfig.records]));
+    const catalogMap = Object.fromEntries(catalogKinds.map((k) => [k, new Map(catalogByKind[k].map((r) => [r.id, r]))]));
+    const scenes = story.initialConfig.storyIndex;
+    const sceneMap = new Map(scenes.map((s) => [s.id, s]));
+    const tree = storyTree(scenes);
+    const edges = catalogLinks(catalog);
+    const push = (fromKind, fromId, toKind, toId, label) => {
+      if (fromKind === toKind && fromId === toId)
+        return;
+      edges.push({ source: { noteId: fromKind, recordId: fromId }, target: { noteId: toKind, recordId: toId }, label: String(label || toId).slice(0, 160) });
+    };
+    for (const scene of scenes) {
+      for (const ref of scene.refs || []) {
+        const target = catalogMap[ref.note]?.get(ref.id);
+        if (!target)
+          continue;
+        push("story", scene.id, ref.note, ref.id, target.title);
+        push(ref.note, ref.id, "story", scene.id, scene.title);
+      }
+    }
+    const linksBySource = new Map;
+    for (const edge of edges) {
+      const key = edge.source.noteId + "\x00" + edge.source.recordId;
+      let list = linksBySource.get(key);
+      if (!list) {
+        list = new Map;
+        linksBySource.set(key, list);
+      }
+      const targetKey = edge.target.noteId + "\x00" + edge.target.recordId;
+      if (!list.has(targetKey))
+        list.set(targetKey, edge);
+    }
+    return { root, catalogByKind, catalogMap, scenes, sceneMap, initialScene: story.initialConfig.initialScene, tree, linksBySource };
+  }
+  function watchRoot(root, listener) {
+    if (closing)
+      return () => {};
+    let state = watchers.get(root);
+    if (!state) {
+      state = { listeners: new Set, timer: undefined, fsWatcher: undefined, inflight: null };
+      try {
+        state.fsWatcher = watchFs(root, { recursive: true }, (_event, filename) => {
+          if (ignoredWatchPath(filename))
+            return;
+          clearTimeout(state.timer);
+          state.timer = setTimeout(() => {
+            state.timer = undefined;
+            for (const fn of [...state.listeners])
+              fn();
+          }, 25);
+        });
+        state.fsWatcher.on("error", () => {});
+      } catch {
+        state.fsWatcher = undefined;
+      }
+      watchers.set(root, state);
+    }
+    state.listeners.add(listener);
+    let active = true;
+    return () => {
+      if (!active)
+        return;
+      active = false;
+      state.listeners.delete(listener);
+      if (!state.listeners.size) {
+        clearTimeout(state.timer);
+        state.fsWatcher?.close();
+        state.inflight = null;
+        watchers.delete(root);
+      }
+    };
+  }
+  let sharedInflight = new Map;
+  async function projection(root) {
+    let work = sharedInflight.get(root);
+    if (!work) {
+      work = computeProjection(root).finally(() => {
+        if (sharedInflight.get(root) === work)
+          sharedInflight.delete(root);
+      });
+      sharedInflight.set(root, work);
+    }
+    return work;
+  }
+  async function desktopNoteMap(desktopId, fallback = {}) {
+    const map = { ...fallback };
+    if (typeof app.core.listNotes === "function") {
+      const rows = await app.core.listNotes({ desktopId });
+      for (const row of rows) {
+        if (row.value.archived)
+          continue;
+        const cfg = (await app.core.readRecord("states", row.key + ":config"))?.value;
+        if (cfg?.connections?.game?.provider === name && cfg.connections.game.connectionId === name) {
+          const kind = catalogKinds.includes(cfg.kind) ? cfg.kind : "story";
+          map[kind] = row.key;
+        }
+      }
+    }
+    return map;
+  }
+  async function allowedTargets(desktopId, noteId, noteIds) {
+    if (typeof app.skillConnections?.list !== "function")
+      return new Set(Object.values(noteIds));
+    const relations = await app.skillConnections.list(desktopId);
+    const peers = new Set;
+    for (const rel of relations) {
+      if (!rel.enabled || rel.archived || !rel.nodeIds.includes(noteId))
+        continue;
+      for (const peerId of rel.nodeIds)
+        if (peerId !== noteId)
+          peers.add(peerId);
+    }
+    return peers;
+  }
+  async function linksFor(desktopId, noteId, kind, recordId, b, data) {
+    const noteIds = await desktopNoteMap(desktopId, b?.noteIds);
+    const peers = await allowedTargets(desktopId, noteId, noteIds);
+    const raw = data.linksBySource.get(kind + "\x00" + recordId);
+    if (!raw)
+      return [];
+    const result = [];
+    for (const edge of raw.values()) {
+      const targetNoteId = noteIds[edge.target.noteId];
+      if (!targetNoteId || targetNoteId !== noteId && !peers.has(targetNoteId))
+        continue;
+      if (targetNoteId === noteId && edge.target.recordId === recordId)
+        continue;
+      const id = "ref_" + digest(JSON.stringify([noteId, recordId, targetNoteId, edge.target.recordId])).slice(0, 24);
+      result.push({ id, label: edge.label, target: { noteId: targetNoteId, recordId: edge.target.recordId } });
+    }
+    return result;
   }
   async function member(ctx) {
     const { noteId, providerConnection: connection } = ctx.scope;
-    if (!noteId || connection?.provider !== name || connection.connectionId !== "game-project")
+    if (!noteId || connection?.provider !== name || connection.connectionId !== name)
       throw Error("此便笺没有选择游戏项目连接");
-    const note = (await app.core.getNote(noteId))?.value;
-    if (!note?.desktopId || note.archived)
+    const noteRecord = typeof ctx.note === "function" ? await ctx.note() : undefined;
+    const stored = (await app.core.getNote(noteId))?.value;
+    if (!stored?.desktopId || stored.archived)
       throw Error("游戏便笺已移除");
-    if (connection.desktopId !== note.desktopId)
+    if (connection.desktopId !== stored.desktopId)
       throw Error("游戏项目连接不属于当前桌面");
-    const b = await binding(app, note.desktopId), kind = b && kindOf(b, noteId);
-    if (b && !kind)
-      throw Error("便笺不属于已绑定桌面的内容库");
-    return { id: note.desktopId, kind, b };
+    const config = noteRecord?.config ?? (await app.core.readRecord("states", noteId + ":config"))?.value ?? {};
+    const b = await binding(app, stored.desktopId);
+    const mapped = b?.noteIds ? contentKinds.find((k) => b.noteIds[k] === noteId) : undefined;
+    const kind = catalogKinds.includes(config.kind) ? config.kind : mapped || (config.connections?.game ? "story" : undefined);
+    if (!kind || !contentKinds.includes(kind))
+      throw Error("便笺不属于游戏内容库");
+    return { id: stored.desktopId, noteId, kind, b };
   }
-  async function readIndex(id, kind, b) {
-    if (!b)
-      return null;
-    try {
-      return JSON.parse(await readFile3(join4(directory(id), "snapshots", b.snapshot, kind + ".json"), "utf8"));
-    } catch (error) {
-      if (error.code !== "ENOENT")
-        throw error;
-      const current = await binding(app, id);
-      if (!current || current.snapshot === b.snapshot)
-        throw error;
-      return readIndex(id, kind, current);
-    }
+  function subscribeProject(_input, invalidate, ctx) {
+    const noteId = ctx.scope.noteId, desktopId = ctx.scope.providerConnection?.desktopId;
+    if (!noteId || !desktopId || closing)
+      return () => {};
+    let disposed = false, stopRoot = () => {}, currentRoot = "";
+    const syncWatcher = async () => {
+      if (disposed || closing)
+        return;
+      const b = await binding(app, desktopId).catch(() => {
+        return;
+      });
+      const nextRoot = b?.root || "";
+      if (disposed || closing || nextRoot === currentRoot)
+        return;
+      stopRoot();
+      currentRoot = nextRoot;
+      stopRoot = nextRoot ? watchRoot(nextRoot, () => invalidate()) : () => {};
+    };
+    syncWatcher();
+    const key = recordKey(desktopId);
+    const stopCore = typeof app.core.subscribe === "function" ? app.core.subscribe((event) => {
+      if (disposed)
+        return;
+      if (event.changes.some((c) => c.table === "notes" || c.table === "connections" || c.table === "states" && c.key === key)) {
+        syncWatcher().then(() => invalidate());
+      }
+    }) : () => {};
+    return () => {
+      disposed = true;
+      stopRoot();
+      stopCore();
+    };
   }
   async function status(_, ctx) {
-    const { id, b } = await member(ctx);
-    if (!b)
+    const { b } = await member(ctx);
+    if (!b?.root)
       return { configured: false, ready: false, message: missingMessage };
     try {
       await access(await inside2(b.root, "public/data/content-catalog.json"));
-      await access(join4(directory(id), "snapshots", b.snapshot, "story.json"));
-      return { ready: true, configured: true, verifiedAt: b.verifiedAt, label: "游戏仓库", commit: b.commit };
+      await access(await inside2(b.root, "knowledge/index.md"));
+      const commit = await git2(["-C", b.root, "rev-parse", "--verify", "HEAD^{commit}"], ctx.signal).catch(() => b.commit || "");
+      return { ready: true, configured: true, verifiedAt: b.verifiedAt, label: "游戏仓库", root: b.root, ...commit ? { commit } : {} };
     } catch {
       return { configured: false, ready: false, message: "无法读取已绑定的游戏目录。" + missingMessage };
     }
   }
-  async function index(_, ctx) {
-    const { id, kind, b } = await member(ctx);
-    return readIndex(id, kind, b);
+  async function catalogResource(input, ctx) {
+    const { id, noteId, kind, b } = await member(ctx);
+    if (!catalogKinds.includes(kind))
+      throw Error("此便笺不是目录内容库");
+    if (!b?.root)
+      return null;
+    const data = await projection(b.root);
+    const rows = data.catalogByKind[kind] || [];
+    const op = input?.op || "page";
+    if (op === "overview")
+      return { count: rows.length, items: rows.slice(0, 3).map((r) => r.title) };
+    if (op === "home") {
+      const home = homeRecords(kind, rows);
+      const records = await Promise.all(home.records.map(async (row) => ({ ...row, links: await linksFor(id, noteId, kind, row.id, b, data) })));
+      return { ...home, records };
+    }
+    if (op === "record") {
+      const target = typeof input?.id === "string" ? data.catalogMap[kind]?.get(input.id) : undefined;
+      if (!target)
+        return null;
+      return { ...target, links: await linksFor(id, noteId, kind, target.id, b, data) };
+    }
+    if (op === "cursor") {
+      const start = Math.max(0, Number.parseInt(String(input?.cursor || "0"), 10) || 0);
+      const size = Math.min(50, Math.max(1, Math.trunc(Number(input?.limit) || 50)));
+      const slice = rows.slice(start, start + size).map((r) => ({ id: r.id, title: r.title }));
+      return { items: slice, ...start + size < rows.length ? { next: String(start + size) } : {} };
+    }
+    return search(rows, input || {});
+  }
+  async function storyResource(input, ctx) {
+    const { id, noteId, kind, b } = await member(ctx);
+    if (kind !== "story")
+      throw Error("只有剧情知识库可读取剧情导航");
+    if (!b?.root)
+      return null;
+    const data = await projection(b.root);
+    const op = input?.op || "scenes";
+    const strip = ({ search: _s, body: _b, refs: _r, ...info }) => info;
+    if (op === "home") {
+      const current = data.sceneMap.get(data.initialScene) || data.scenes.find((r) => r.nodeId) || data.scenes[0];
+      if (!current)
+        return { current: null, branches: [] };
+      const branches = current.choices.map((c) => data.sceneMap.get(c.to) || data.scenes.find((r) => r.nodeId === c.to)).filter(Boolean).slice(0, 2);
+      const card = (s) => ({ ...strip(s), excerpt: excerpt(s.body, s.search.replace(s.title, "")) });
+      return { current: card(current), branches: branches.map(card) };
+    }
+    if (op === "scene") {
+      const targetId = typeof input?.id === "string" && input.id ? input.id : data.initialScene;
+      const row = data.sceneMap.get(targetId) || (input?.id ? undefined : data.scenes[0]);
+      if (!row)
+        return { scene: null, initialScene: data.initialScene };
+      const trail = ancestors(data.tree.parents.get(row.id)).map((branch) => ({ key: branch.key, name: branch === data.tree.root ? "全书" : branch.name }));
+      const choices = row.choices.map((c) => {
+        const target = data.sceneMap.get(c.to);
+        return { label: c.label, to: c.to, ...target ? { title: target.title, hasChildren: target.choices.length > 0 } : {} };
+      });
+      return {
+        initialScene: data.initialScene,
+        scene: { ...strip(row), choices, ancestors: trail, links: await linksFor(id, noteId, "story", row.id, b, data) }
+      };
+    }
+    if (op === "tree") {
+      const folderKey = typeof input?.folderKey === "string" && input.folderKey ? input.folderKey : "[]";
+      const branch = data.tree.branches.get(folderKey);
+      if (!branch)
+        return { key: folderKey, name: "全书", ancestors: [], items: [], hasMore: false };
+      const trail = ancestors(branch).map((node) => ({ key: node.key, name: node === data.tree.root ? "全书" : node.name }));
+      const all = [
+        ...[...branch.folders.values()].map((child) => ({ kind: "folder", key: child.key, name: child.name, hasChildren: Boolean(child.folders.size || child.scenes.length) })),
+        ...branch.scenes.map((scene) => ({ kind: "scene", id: scene.id, title: scene.title, hasChildren: scene.choices.length > 0 }))
+      ];
+      const start = Math.max(0, Number.parseInt(String(input?.cursor || "0"), 10) || 0);
+      const size = Math.min(50, Math.max(1, Math.trunc(Number(input?.limit) || 40)));
+      const items = all.slice(start, start + size);
+      return {
+        key: branch.key,
+        name: branch === data.tree.root ? "全书" : branch.name,
+        ancestors: trail,
+        items,
+        total: all.length,
+        hasMore: start + size < all.length,
+        ...start + size < all.length ? { next: String(start + size) } : {}
+      };
+    }
+    const words = String(input?.query ?? "").normalize("NFKC").trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const resolved = words.length ? data.scenes.filter((row) => {
+      const text = [row.id, row.title, ...row.folders, row.search].join(" ").normalize("NFKC").toLowerCase();
+      return words.every((w) => text.includes(w));
+    }) : data.scenes;
+    const start = input?.cursor !== undefined ? Math.max(0, Number.parseInt(String(input.cursor), 10) || 0) : Math.max(0, Math.trunc(Number(input?.offset) || 0));
+    const limit = Math.min(50, Math.max(1, Math.trunc(Number(input?.limit) || 30)));
+    const nextOffset = start + limit;
+    return {
+      total: resolved.length,
+      items: resolved.slice(start, nextOffset).map(strip),
+      ...nextOffset < resolved.length ? { next: String(nextOffset) } : {}
+    };
+  }
+  async function doc(input, ctx) {
+    const { b } = await member(ctx);
+    if (!b?.root)
+      return null;
+    if (typeof input?.path !== "string" || !input.path.trim())
+      throw Error("缺少项目文档路径");
+    const rawPath = input.path.replace(/^\/+/, ""), file = await inside2(b.root, rawPath);
+    const allowed = relative2(b.root, file).split(sep2).join("/"), format = extname2(file).toLowerCase();
+    if (![".md", ".markdown", ".mdown", ".json"].includes(format))
+      throw Error("不支持的项目文档格式");
+    const content = await readFile2(file, "utf8"), rows = content.split(/\r?\n/);
+    const start = Math.max(1, Math.trunc(Number(input.startLine)) || 1);
+    const count = Math.min(500, Math.max(1, Math.trunc(Number(input.maxLines)) || 240)) * Math.min(100, Math.max(1, Math.trunc(Number(input.pages)) || 1));
+    return {
+      resourcePath: join3(b.root, "knowledge", "index.md"),
+      path: allowed,
+      displayPath: allowed,
+      format,
+      content: rows.slice(start - 1, start - 1 + count).join(`
+`),
+      revision: digest(content),
+      startLine: start,
+      endLine: Math.min(rows.length, start + count - 1),
+      totalLines: rows.length
+    };
   }
   async function asset(input, ctx) {
-    const { id, b } = await member(ctx);
-    if (!b || typeof input?.key !== "string" && typeof input?.id !== "string")
+    const { b } = await member(ctx);
+    if (!b?.root || typeof input?.key !== "string" && typeof input?.id !== "string")
       return null;
-    const index = await readIndex(id, "media", b);
-    const row = index.records.find((item) => input.key ? item.mediaKey === input.key : item.id === input.id);
-    if (!row)
+    let sourcePath = "";
+    if (typeof input.key === "string" && input.key) {
+      sourcePath = input.key.split("?v=")[0].replace(/^\/+/, "");
+    } else if (typeof input.id === "string" && input.id) {
+      if (input.id.startsWith("asset:"))
+        sourcePath = input.id.slice(6).replace(/^\/+/, "");
+      else {
+        const data = await projection(b.root);
+        sourcePath = data.catalogMap.media?.get(input.id)?.source || "";
+      }
+    }
+    if (!sourcePath)
       return null;
-    const formats = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".avif": "image/avif", ".bmp": "image/bmp", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".oga": "audio/ogg", ".m4a": "audio/mp4", ".aac": "audio/aac", ".flac": "audio/flac", ".opus": "audio/ogg" };
-    const mime = formats[extname2(row.source).toLowerCase()];
+    const mime = formats[extname2(sourcePath).toLowerCase()];
     if (!mime)
       return null;
-    const file = await inside2(b.root, row.source);
-    if ((await stat(file)).size > 32 * 1024 * 1024)
+    let file;
+    try {
+      file = await inside2(b.root, sourcePath);
+    } catch {
+      return null;
+    }
+    const info = await stat(file).catch(() => null);
+    if (!info || !info.isFile())
+      return null;
+    if (info.size > 32 * 1024 * 1024)
       throw Error("素材超过预览大小上限");
-    const bytes = await readFile3(file);
-    if (row.mediaKey !== row.source + "?v=" + digest(bytes).slice(0, 16))
-      throw Error("素材已变化，请刷新游戏索引");
+    const bytes = await readFile2(file);
     let preview = bytes, previewMime = mime;
-    if (mime.startsWith("image/") && bytes.length > 256 * 1024) {
+    if (mime.startsWith("image/") && mime !== "image/svg+xml" && bytes.length > 256 * 1024) {
       const require2 = createRequire(import.meta.url);
       const sharp = createRequire(require2.resolve("@realiz3r/worka/package.json"))("sharp");
       preview = await sharp(bytes, { animated: false }).rotate().resize({ width: 600, height: 600, fit: "inside", withoutEnlargement: true }).webp({ quality: 65, effort: 2 }).toBuffer();
@@ -721,48 +1121,10 @@ function gameProject(host) {
       return null;
     return "data:" + previewMime + ";base64," + preview.toString("base64");
   }
-  async function doc(input, ctx) {
-    const { id, kind, b } = await member(ctx);
-    if (!b)
-      return null;
-    if (kind !== "story")
-      throw Error("只有剧情便笺可读取项目原文");
-    if (typeof input?.path !== "string" || !input.path)
-      throw Error("缺少剧情文档路径");
-    const path = input.path.replace(/^\/+/, ""), file = await inside2(b.root, path);
-    const allowed = relative2(b.root, file).split(sep2).join("/"), format = extname2(file).toLowerCase();
-    const inKnowledge = allowed.startsWith("knowledge/") && [".md", ".markdown", ".mdown"].includes(format);
-    if (!inKnowledge) {
-      if (format !== ".json" || !allowed.startsWith("public/data/"))
-        throw Error("不支持的剧情文档");
-      const story = await readIndex(id, "story", b);
-      if (!story.storyIndex.some((s) => s.path === allowed))
-        throw Error("文件不在已登记的剧情内");
-    }
-    const content = await readFile3(file, "utf8"), rows = content.split(/\r?\n/);
-    const start = Math.max(1, Math.trunc(input.startLine) || 1), count = Math.min(500, Math.max(1, Math.trunc(input.maxLines) || 240)) * Math.min(100, Math.max(1, Math.trunc(input.pages) || 1));
-    return { resourcePath: join4(b.root, "knowledge", "index.md"), path: allowed, displayPath: allowed, format, content: rows.slice(start - 1, start - 1 + count).join(`
-`), revision: digest(content), startLine: start, endLine: Math.min(rows.length, start + count - 1), totalLines: rows.length };
-  }
-  async function prepare(id, source, caller, signal) {
-    const prior = await binding(app, id), origin = source ?? prior?.source;
-    if (typeof origin !== "string" || !origin.trim())
-      throw Error(missingMessage);
-    const dir = directory(id), project = await sourceOf(app, id, caller, signal);
-    if (!project || !referenceNotes.some((k) => project.noteIds?.[k]))
-      throw Error("当前桌面没有游戏项目便笺");
-    const members = {};
-    for (const key of referenceNotes) {
-      const noteId = project.noteIds[key];
-      if (!noteId)
-        continue;
-      const saved = (await app.core.readRecord("states", noteId + ":config"))?.value?.connections?.game;
-      if (saved?.provider === name && saved.connectionId === "game-project")
-        members[key] = noteId;
-    }
-    if (!Object.keys(members).length)
-      throw Error("此桌面的便笺未选择游戏项目连接");
-    const root = await checkout(origin.trim(), dir, signal);
+  async function bind(id, source, caller, signal) {
+    const origin = typeof source === "string" && source.trim() ? source.trim() : defaultRepo;
+    const dir = directory(id);
+    const root = await checkout(origin, dir, signal);
     for (const path of ["public", "public/data", "knowledge", "public/data/content-catalog.json", "knowledge/index.md"])
       await inside2(root, path);
     for (const path of ["public/assets", "public/assets/asset-manifest.json", "art-references"]) {
@@ -773,63 +1135,67 @@ function gameProject(host) {
           throw error;
       }
     }
-    const data = await projectData(root), adapter = project.noteIds.preview ? await inside2(await realpath2(project.directory), "playtest/preview.config.mjs") : "";
-    const files = projectFiles(data, root, adapter), snapshot = digest(JSON.stringify(files)), snapshots = join4(dir, "snapshots");
-    await mkdir(snapshots, { recursive: true });
-    const dest = join4(snapshots, snapshot);
-    try {
-      await access(dest);
-    } catch (err) {
-      if (err.code !== "ENOENT")
-        throw err;
-      const temp = await mkdtemp(join4(snapshots, ".stage-"));
-      try {
-        for (const [key, index] of Object.entries(files)) {
-          const bytes = JSON.stringify(index);
-          if (Buffer.byteLength(bytes) > 5.9 * 1024 * 1024)
-            throw Error("便笺 " + key + " 索引超过 5.9 MiB 上限");
-          await writeFile(join4(temp, key + ".json"), bytes);
-        }
-        await rename(temp, dest);
-      } finally {
-        await rm(temp, { recursive: true, force: true });
-      }
+    const commit = await git2(["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], signal);
+    const project = typeof app.dispatch === "function" ? await app.dispatch("desktop.source", { desktopId: id }, caller, signal).catch(() => null) : null;
+    const seeded = {};
+    for (const key of contentKinds) {
+      const noteId = project?.noteIds?.[key];
+      if (!noteId)
+        continue;
+      const saved = (await app.core.readRecord("states", noteId + ":config"))?.value?.connections?.game;
+      if (saved?.provider === name && saved.connectionId === name)
+        seeded[key] = noteId;
     }
+    const members = await desktopNoteMap(id, seeded);
+    if (!Object.keys(members).length)
+      throw Error("当前桌面没有绑定游戏项目连接的便笺");
+    fileCaches.delete(root);
+    const watched = watchers.get(root);
+    if (watched)
+      watched.dataPromise = null;
     signal?.throwIfAborted();
-    const undo = await links(app, caller, { ...project, noteIds: members }, data.links, signal);
-    const value = { source: origin, root, snapshot, commit: data.commit, verifiedAt: Date.now(), noteIds: members };
-    try {
-      await app.core.writeRecord("states", recordKey(id), value);
-    } catch (error) {
-      if ((await binding(app, id))?.snapshot !== snapshot) {
-        await undo?.();
-        throw error;
-      }
-    }
-    for (const file of await readdir2(snapshots)) {
-      if (/^[a-f0-9]{64}$/.test(file) && file !== snapshot && file !== prior?.snapshot)
-        await rm(join4(snapshots, file), { recursive: true, force: true }).catch(() => {});
-    }
-    return { root, commit: data.commit, scenes: files.story.storyIndex.length, links: data.links.length };
+    await app.core.writeRecord("states", recordKey(id), { source: origin, root, commit, verifiedAt: Date.now(), noteIds: members });
+    return { root, commit };
   }
-  const resource = (load) => ({ access: "owner", version: "1", load, query: { load } });
+  const liveResource = (load) => ({ access: "owner", version: "2", load, subscribe: subscribeProject, query: { load, subscribe: subscribeProject } });
   return {
-    resources: { status: resource(status), index: resource(index), document: resource(doc), asset: resource(asset) },
+    resources: {
+      status: liveResource(status),
+      catalog: liveResource(catalogResource),
+      story: liveResource(storyResource),
+      document: liveResource(doc),
+      asset: liveResource(asset)
+    },
     initializers: { status: async () => {} },
+    async noteContext(note) {
+      if (!note?.desktopId)
+        return [];
+      const b = await binding(app, note.desktopId);
+      if (!b?.root)
+        return [];
+      let adapter = "";
+      if (typeof app.dispatch === "function") {
+        const src = await app.dispatch("desktop.source", { desktopId: note.desktopId }, { kind: "user" }).catch(() => null);
+        if (src?.directory) {
+          try {
+            adapter = await inside2(await realpath2(src.directory), "playtest/preview.config.mjs");
+          } catch {}
+        }
+      }
+      return [`已绑定 CardGame 仓库：${b.root}${adapter ? `；试玩适配器：${adapter}` : ""}。`];
+    },
     async invoke(method, input, caller, signal) {
-      if (method !== "bind" && method !== "refresh")
+      if (method !== "bind")
         throw Error("未知游戏项目操作 " + method);
       const id = await desktopForCommand(app, caller, input?.desktopId);
-      const source = method === "bind" ? input?.source : undefined;
-      if (method === "bind" && (typeof source !== "string" || !source.trim()))
-        throw Error(missingMessage);
+      const source = typeof input?.source === "string" && input.source.trim() ? input.source.trim() : defaultRepo;
       const current = pending.get(id);
       if (current) {
         if (current.source === source)
           return current.work;
-        throw Error("当前桌面正在准备另一个游戏项目");
+        throw Error("当前桌面正在绑定另一个游戏仓库");
       }
-      const work = prepare(id, source, caller, signal);
+      const work = bind(id, source, caller, signal);
       pending.set(id, { source, work });
       try {
         return await work;
@@ -837,8 +1203,19 @@ function gameProject(host) {
         pending.delete(id);
       }
     },
+    beginClose() {
+      closing = true;
+      for (const state of watchers.values()) {
+        clearTimeout(state.timer);
+        state.fsWatcher?.close();
+        state.dataPromise = null;
+      }
+      watchers.clear();
+    },
     async close() {
+      this.beginClose();
       await Promise.allSettled([...pending.values()].map((v) => v.work));
+      fileCaches.clear();
     }
   };
 }

@@ -1,2 +1,1 @@
-import './preview-compact.css';
-export default function Compact(): import("react").JSX.Element;
+export default function CompactView(): import("react").JSX.Element;

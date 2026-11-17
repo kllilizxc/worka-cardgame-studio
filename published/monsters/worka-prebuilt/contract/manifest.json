@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "edd1b24e2d73ae189c6fa6879fc1a1d5a3b4f04c917be8fdd9b3f5b2eca6ba03",
+  "codeVersion": "da589c6df84d9c36ed5cb1204de0e3f822643b6eb336212cd92e739930dbe9c9",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -9,7 +9,6 @@
     "references/types/compact.d.ts",
     "references/types/expanded.d.ts",
     "references/types/home.d.ts",
-    "references/types/media.d.ts",
     "references/types/model.d.ts",
     "references/types/search.d.ts",
     "references/types/view.d.ts",
@@ -18,7 +17,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-catalog",
-    "description": "在 CardGame 工作树中查找并维护秘境、战斗、卡牌、人物、商店与素材索引。"
+    "description": "实时分页浏览秘境、战斗、卡牌、怪物、人物、商店与素材，并在本便笺范围内直接编辑游戏源文件。"
   },
   "typeErrors": []
 }

@@ -1,4 +1,4 @@
-import { NoteIcon } from '@dsh-workbench/react';
+import { NoteIcon } from '@realiz3r/worka-react';
 import type { TodoListItem } from './list';
 import { ui } from './messages';
 

@@ -1,0 +1,151 @@
+{
+  "now": "2026-11-02T09:30:00+08:00",
+  "documents": [
+    {
+      "collection": "items",
+      "id": "1",
+      "value": {
+        "title": "整理阅读摘录",
+        "status": "done",
+        "category": "学习",
+        "imageCount": 0,
+        "attachmentCount": 0,
+        "hasDelegation": false,
+        "position": "1",
+        "revision": 1,
+        "normalizedTitle": "整理阅读摘录",
+        "active": false,
+        "view": {
+          "title": "整理阅读摘录",
+          "status": "done",
+          "category": "学习",
+          "imageCount": 0,
+          "attachmentCount": 0,
+          "hasDelegation": false,
+          "archived": false
+        },
+        "createdAt": "2026-11-02T09:30:00+08:00",
+        "archived": false
+      }
+    },
+    {
+      "collection": "items",
+      "id": "2",
+      "value": {
+        "title": "准备周末徒步",
+        "status": "todo",
+        "category": "生活",
+        "imageCount": 0,
+        "attachmentCount": 0,
+        "hasDelegation": false,
+        "position": "2",
+        "revision": 1,
+        "normalizedTitle": "准备周末徒步",
+        "active": true,
+        "view": {
+          "title": "准备周末徒步",
+          "status": "todo",
+          "category": "生活",
+          "imageCount": 0,
+          "attachmentCount": 0,
+          "hasDelegation": false,
+          "archived": false
+        },
+        "createdAt": "2026-11-02T09:30:00+08:00",
+        "archived": false
+      }
+    },
+    {
+      "collection": "items",
+      "id": "3",
+      "value": {
+        "title": "完成项目回顾",
+        "status": "in_progress",
+        "category": "工作",
+        "imageCount": 0,
+        "attachmentCount": 0,
+        "hasDelegation": false,
+        "position": "3",
+        "revision": 1,
+        "normalizedTitle": "完成项目回顾",
+        "active": true,
+        "view": {
+          "title": "完成项目回顾",
+          "status": "in_progress",
+          "category": "工作",
+          "imageCount": 0,
+          "attachmentCount": 0,
+          "hasDelegation": false,
+          "archived": false
+        },
+        "createdAt": "2026-11-02T09:30:00+08:00",
+        "archived": false
+      }
+    },
+    {
+      "collection": "totals",
+      "id": "all",
+      "value": {
+        "total": 3,
+        "attachmentCount": 0,
+        "counts": {
+          "todo": 1,
+          "in_progress": 1,
+          "blocking": 0,
+          "done": 1
+        },
+        "revision": 1,
+        "name": "all",
+        "firstPosition": "1"
+      }
+    },
+    {
+      "collection": "categories",
+      "id": "2118cbc109880ac8bda93335c53f6e8e1d732152de6aa65c09f3bda104219178",
+      "value": {
+        "total": 1,
+        "attachmentCount": 0,
+        "counts": {
+          "todo": 0,
+          "in_progress": 0,
+          "blocking": 0,
+          "done": 1
+        },
+        "revision": 1,
+        "name": "学习"
+      }
+    },
+    {
+      "collection": "categories",
+      "id": "15d208d1b4c98aae0cbadefb1e5e984ec6c50431755b24808f168b9fecf9679f",
+      "value": {
+        "total": 1,
+        "attachmentCount": 0,
+        "counts": {
+          "todo": 1,
+          "in_progress": 0,
+          "blocking": 0,
+          "done": 0
+        },
+        "revision": 1,
+        "name": "生活"
+      }
+    },
+    {
+      "collection": "categories",
+      "id": "bc62d1b6b936c78dbbd0bbe5572e32d03c66b98b4e4ce961b44249c344f570ad",
+      "value": {
+        "total": 1,
+        "attachmentCount": 0,
+        "counts": {
+          "todo": 0,
+          "in_progress": 1,
+          "blocking": 0,
+          "done": 0
+        },
+        "revision": 1,
+        "name": "工作"
+      }
+    }
+  ]
+}

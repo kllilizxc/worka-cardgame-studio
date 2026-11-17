@@ -12,6 +12,7 @@ const { officialSourceHash } = await load('src/runtime/official-artifacts.ts');
 const { BunNoteBuilder } = await load('src/runtime/build.ts');
 const { packagePublishedArtifact, preparePublishedNote, readPublishedArtifact } = await load('src/runtime/published-artifact.ts');
 const { readNotePublication, copyPublication } = await load('src/note-publication.ts');
+const { completePublicationSource } = await load('src/publication-source-files.ts');
 const stage = await mkdtemp(join(tmpdir(), 'worka-studio-build-'));
 const keys = args.length > 1 ? args.slice(1) : ['ideas','todo','preview','story','catalog'];
 const catalogKeys = ['cards','monsters','people','shop','media','map','encounter'];
@@ -36,7 +37,7 @@ try {
   for (const key of keys) {
     if (!['ideas','todo','preview','story','catalog'].includes(key)) throw Error('未知源码 '+key);
     const source = join(repo,'notes',key), active = join(stage,'src-'+key), target = join(stage,'published-'+key);
-    const def = await readNotePublication(source);
+    const def = await completePublicationSource(source, await readNotePublication(source), { hostSdkRoot: join(host, 'sdk') });
     await copyPublication(source,active,def);
     const version = await officialSourceHash(active);
     await symlink(join(host,'node_modules'),join(active,'node_modules'),'dir');

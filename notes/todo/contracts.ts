@@ -1,6 +1,6 @@
-import { z } from '@dsh-workbench/runtime';
+import { z } from '@realiz3r/worka-runtime';
 import { attachmentRefsSchema } from './attachment-schema';
-import { note, todoStatusSchema, todoPrioritySchema, todoImageSchema, todoItemSourceSchema, storedTodoItemSchema } from './model';
+import { note, todoStatusSchema, todoPrioritySchema, todoImageSchema, todoItemSourceSchema, storedTodoItemSchema, todoWorkKindSchema, unblockProposalSchema } from './model';
 export * from './model';
 
 export const delegateTodoInputSchema = z.object({
@@ -10,7 +10,7 @@ export const delegateTodoInputSchema = z.object({
   resumePaused: z.boolean().optional(),
 });
 export const feedbackInputSchema = z.object({
-  itemId: z.string(), status: todoStatusSchema, conclusion: z.string(), expectedRevision: z.string().optional(),
+  itemId: z.string(), status: todoStatusSchema, conclusion: z.string(), expectedRevision: z.string().optional(), unblockAction: unblockProposalSchema.optional(),
 });
 export const moveTodoInputSchema = z.object({
   id: z.string(), status: todoStatusSchema,
@@ -24,7 +24,7 @@ export const editTodoInputSchema = z.object({
   baseFingerprint: z.string().min(1),
 });
 export const importItemInputSchema = z.object({
-  title: z.string(), description: z.string().optional(), priority: todoPrioritySchema.optional(),
+  title: z.string(), description: z.string().optional(), priority: todoPrioritySchema.optional(), workKind: todoWorkKindSchema.optional(),
   category: z.string().optional(),
   // Local date YYYY-MM-DD, or YYYY-MM-DDTHH:mm when a time is present.
   dueDate: z.string().optional(), source: todoItemSourceSchema.optional(),
@@ -41,7 +41,7 @@ export const changed = note.event({
     name: 'items.changed',
     visibility: 'public',
     description: '一个待办条目发生变化；itemId 是稳定条目 ID，接收方按需查询当前内容。',
-    payload: z.object({ itemId: z.string(), title: z.string(), revision: z.string() }),
+    payload: z.object({ itemId: z.string(), title: z.string(), revision: z.string(), workKind: z.string().min(1).max(64).optional() }),
     objectRef: '/itemId', objectLabel: '/title', revision: '/revision',
   });
 export const delegationRequested = note.event({

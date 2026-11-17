@@ -1,51 +1,78 @@
-import { defineNote, z } from '@dsh-workbench/runtime';
+import {defineNote,z} from '@dsh-workbench/runtime';
 
-export const resourceSchema = z.object({
-  title: z.string(), path: z.string(), root: z.string().optional(),
-  linkBase: z.string().optional(), revision: z.string().optional(),
+export const linkSchema=z.object({
+  id:z.string(),
+  label:z.string(),
+  target:z.object({noteId:z.string(),recordId:z.string()}),
 });
-export type Resource = z.infer<typeof resourceSchema>;
-export const referenceStateSchema = z.looseObject({
-  title: z.string().optional(),
-  resourceRevisions: z.record(z.string(), z.string()).optional(),
+export type LiveLink=z.infer<typeof linkSchema>;
+
+export const choiceSchema=z.object({
+  label:z.string(),
+  to:z.string(),
+  title:z.string().optional(),
+  hasChildren:z.boolean().optional(),
 });
-export const sceneSchema = z.object({
-  id:z.string(), title:z.string(), path:z.string(), folders:z.array(z.string()),
-  search:z.string(), body:z.string(), choices:z.array(z.object({label:z.string(),to:z.string()})),
-  refs:z.array(z.object({note:z.string(),id:z.string()})).optional(),
-  nodeId:z.string().optional(), storyId:z.string().optional(), backgroundAssetId:z.string().optional(),
+
+export const ancestorSchema=z.object({
+  key:z.string(),
+  name:z.string(),
 });
-export type Scene = z.infer<typeof sceneSchema>;
-export const referenceConfigSchema = z.looseObject({
+
+export const sceneSchema=z.object({
+  id:z.string(),
+  title:z.string(),
+  path:z.string(),
+  folders:z.array(z.string()),
+  choices:z.array(choiceSchema),
+  nodeId:z.string().optional(),
+  storyId:z.string().optional(),
+  backgroundAssetId:z.string().optional(),
+  excerpt:z.string().optional(),
+  ancestors:z.array(ancestorSchema).optional(),
+  links:z.array(linkSchema).optional(),
+});
+export type Scene=z.infer<typeof sceneSchema>;
+
+export const treeItemSchema=z.discriminatedUnion('kind',[
+  z.object({kind:z.literal('folder'),key:z.string(),name:z.string(),hasChildren:z.boolean()}),
+  z.object({kind:z.literal('scene'),id:z.string(),title:z.string(),hasChildren:z.boolean()}),
+]);
+export type TreeItem=z.infer<typeof treeItemSchema>;
+
+export const storyConfigSchema=z.object({
   connections:z.record(z.string(),z.object({provider:z.string(),connectionId:z.string()})).optional(),
-  resources:z.array(resourceSchema),storyIndex:z.array(sceneSchema).optional(),initialScene:z.string().optional(),
-});
-export type Data = z.infer<typeof referenceStateSchema> & z.infer<typeof referenceConfigSchema>;
-export type ReferenceState = z.infer<typeof referenceStateSchema>;
-
-export const note = defineNote({
-  config: { schema: referenceConfigSchema.partial({resources:true}), defaults: {resources:[]} },
-  update: {
-    dataVersion: 'cardgame-story@1',
-    checks: [{
-      name: '关键能力与稳定身份',
-      async run(ctx): Promise<boolean> {
-        const config = await ctx.config.read();
-        return config.resources === undefined || Array.isArray(config.resources) && config.resources.every(resource =>
-          typeof resource.path === 'string' && (resource.title === undefined || typeof resource.title === 'string'));
-      },
-    }],
-  },
 });
 
-export const readInputSchema = z.object({
-  resourcePath: z.string(), path: z.string().optional(), from: z.string().optional(),
-  startLine: z.number().int().min(1).optional(), maxLines: z.number().int().min(1).max(500).optional(),
+export const note=defineNote({
+  records:[{
+    query:'scenes',
+    items:'/items',
+    next:'/next',
+    route:{path:'/scenes/:id',param:'id'},
+    id:'/id',
+    label:'/title',
+  }],
+  config:{schema:storyConfigSchema,defaults:{}},
 });
-export type ReadInput = z.infer<typeof readInputSchema>;
 
-export const documentReadSchema = z.object({
-  resourcePath: z.string(), path: z.string(), displayPath: z.string(), content: z.string(),
-  format: z.string(), revision: z.string(), startLine: z.number(), endLine: z.number(), totalLines: z.number(),
+export const readInputSchema=z.object({
+  path:z.string(),
+  startLine:z.number().int().min(1).optional(),
+  maxLines:z.number().int().min(1).max(500).optional(),
+  pages:z.number().int().min(1).max(100).optional(),
 });
-export type DocumentRead = z.infer<typeof documentReadSchema>;
+export type ReadInput=z.infer<typeof readInputSchema>;
+
+export const documentReadSchema=z.object({
+  resourcePath:z.string(),
+  path:z.string(),
+  displayPath:z.string(),
+  content:z.string(),
+  format:z.string(),
+  revision:z.string(),
+  startLine:z.number(),
+  endLine:z.number(),
+  totalLines:z.number(),
+});
+export type DocumentRead=z.infer<typeof documentReadSchema>;

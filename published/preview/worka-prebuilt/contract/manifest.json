@@ -1,13 +1,12 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "310488485ab6db97ded51f8f3a1bdf75b2ee9e6230e8c0194e26718eabe22a5b",
+  "codeVersion": "f2f781b5e06205380412de18a3fd61589dfb2d768de554487d64bc369bad1d79",
   "status": "ready",
   "files": [
     "SKILL.md",
     "references/api.d.ts",
     "references/types/actions.d.ts",
     "references/types/document.d.ts",
-    "references/types/harbor.d.ts",
     "references/types/messages.d.ts",
     "references/types/model.d.ts",
     "references/types/projection.d.ts",
@@ -24,7 +23,7 @@
   "diagnostics": [],
   "skill": {
     "name": "worka-candidate-preview",
-    "description": "接收候选版本，检查和控制项目预览，核对失败及修复反馈。"
+    "description": "Receive candidate versions, inspect and control project previews, and inspect failure facts and logs."
   },
   "typeErrors": []
 }

@@ -1,2 +1,2 @@
-import './folio.css';
-export default function TodoLayout(): import("react").JSX.Element;
+import React from 'react';
+export default function TodoLayout(): React.JSX.Element;

@@ -23,6 +23,14 @@ export declare function homeRecords(kind: Kind, rows: RecordRow[]): {
             note: "cards" | "encounter" | "map" | "media" | "monsters" | "people" | "shop";
             id: string;
         }[];
+        links?: {
+            id: string;
+            label: string;
+            target: {
+                noteId: string;
+                recordId: string;
+            };
+        }[] | undefined;
         diagram?: {
             id: string;
             label: string;

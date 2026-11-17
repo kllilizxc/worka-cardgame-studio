@@ -16,15 +16,13 @@ var __export = (target, all) => {
 // actions.ts
 var exports_actions = {};
 __export(exports_actions, {
-  addResource: () => addResource,
   document: () => document2,
   note: () => note,
-  projectIndex: () => projectIndex,
-  refreshDocument: () => refreshDocument,
-  registerResource: () => registerResource,
+  scene: () => scene,
   sceneAsset: () => sceneAsset,
   scenes: () => scenes,
-  setStoryIndex: () => setStoryIndex
+  storyHome: () => storyHome,
+  storyTreePage: () => storyTreePage
 });
 
 
@@ -1010,6 +1008,7 @@ function datetime(args) {
 var anyString = /^[\s\S]{0,}$/;
 var integer = /^-?\d+$/;
 var number = /^-?\d+(?:\.\d+)?$/;
+var boolean = /^(?:true|false)$/i;
 var _null = /^null$/i;
 var lowercase = /^[^A-Z]*$/;
 var uppercase = /^[^a-z]*$/;
@@ -1872,6 +1871,26 @@ var $ZodNumberFormat = /* @__PURE__ */ $constructor("$ZodNumberFormat", (inst, d
   $ZodCheckNumberFormat.init(inst, def);
   $ZodNumber.init(inst, def);
 });
+var $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
+  $ZodType.init(inst, def);
+  inst._zod.pattern = boolean;
+  inst._zod.parse = (payload, _ctx) => {
+    if (def.coerce)
+      try {
+        payload.value = Boolean(payload.value);
+      } catch (_) {}
+    const input = payload.value;
+    if (typeof input === "boolean")
+      return payload;
+    payload.issues.push({
+      expected: "boolean",
+      code: "invalid_type",
+      input,
+      inst
+    });
+    return payload;
+  };
+});
 var $ZodNull = /* @__PURE__ */ $constructor("$ZodNull", (inst, def) => {
   $ZodType.init(inst, def);
   inst._zod.pattern = _null;
@@ -2318,6 +2337,89 @@ var $ZodUnion = /* @__PURE__ */ $constructor("$ZodUnion", (inst, def) => {
     });
   };
 });
+function discriminatorMap(def) {
+  const map = new Map;
+  for (const option of def.options) {
+    const values = option._zod.propValues?.[def.discriminator];
+    if (!values || values.size === 0)
+      throw new Error(`Invalid discriminated union option at index "${def.options.indexOf(option)}"`);
+    for (const value of values) {
+      if (map.has(value)) {
+        if (value !== undefined)
+          throw new Error(`Duplicate discriminator value "${String(value)}"`);
+        map.set(value, null);
+      } else {
+        map.set(value, option);
+      }
+    }
+  }
+  return map;
+}
+var $ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("$ZodDiscriminatedUnion", (inst, def) => {
+  def.inclusive = false;
+  $ZodUnion.init(inst, def);
+  const _super = inst._zod.parse;
+  defineLazyInternal(inst, "propValues", (zod) => {
+    const propValues = {};
+    let undefinedCount = 0;
+    for (const option of zod.def.options) {
+      const pv = option._zod.propValues;
+      if (!pv || Object.keys(pv).length === 0)
+        throw new Error(`Invalid discriminated union option at index "${zod.def.options.indexOf(option)}"`);
+      if (pv[zod.def.discriminator]?.has(undefined))
+        undefinedCount++;
+      for (const [k, v] of Object.entries(pv)) {
+        if (!Object.prototype.hasOwnProperty.call(propValues, k)) {
+          assignProp(propValues, k, new Set);
+        }
+        for (const val of v) {
+          propValues[k].add(val);
+        }
+      }
+    }
+    if (!zod.def.unionFallback && undefinedCount > 1)
+      propValues[zod.def.discriminator]?.delete(undefined);
+    return propValues;
+  });
+  def.options.forEach((option, i) => {
+    const propShape = rawShape(option._zod.def);
+    if (propShape && !Object.prototype.hasOwnProperty.call(propShape, def.discriminator)) {
+      throw new Error(`Invalid discriminated union option at index "${i}"`);
+    }
+  });
+  const disc = cached(() => discriminatorMap(def));
+  inst._zod.parse = (payload, ctx) => {
+    const input = payload.value;
+    if (!isObject(input)) {
+      payload.issues.push({
+        code: "invalid_type",
+        expected: "object",
+        input,
+        inst
+      });
+      return payload;
+    }
+    const value = input?.[def.discriminator];
+    const opt = disc.value.get(value);
+    if (opt && (value !== undefined || ctx.direction !== "backward")) {
+      return opt._zod.run(payload, ctx);
+    }
+    if (def.unionFallback || ctx.direction === "backward") {
+      return _super(payload, ctx);
+    }
+    payload.issues.push({
+      code: "invalid_union",
+      errors: [],
+      note: "No matching discriminator",
+      discriminator: def.discriminator,
+      options: Array.from(disc.value.keys()).filter((value) => disc.value.get(value) !== null),
+      input,
+      path: [def.discriminator],
+      inst
+    });
+    return payload;
+  };
+});
 var $ZodIntersection = /* @__PURE__ */ $constructor("$ZodIntersection", (inst, def) => {
   $ZodType.init(inst, def);
   inst._zod.parse = (payload, ctx) => {
@@ -2604,6 +2706,28 @@ var $ZodEnum = /* @__PURE__ */ $constructor("$ZodEnum", (inst, def) => {
     payload.issues.push({
       code: "invalid_value",
       values,
+      input,
+      inst
+    });
+    return payload;
+  };
+});
+var $ZodLiteral = /* @__PURE__ */ $constructor("$ZodLiteral", (inst, def) => {
+  $ZodType.init(inst, def);
+  const values = new Set(def.values);
+  inst._zod.values = values;
+  defineLazyInternal(inst, "pattern", (zod) => {
+    const vals = zod.def.values;
+    return new RegExp(vals.length ? `^(${vals.map((o) => typeof o === "string" ? escapeRegex(o) : o ? escapeRegex(o.toString()) : String(o)).join("|")})$` : "^[^\\s\\S]$");
+  });
+  inst._zod.parse = (payload, _ctx) => {
+    const input = payload.value;
+    if (values.has(input)) {
+      return payload;
+    }
+    payload.issues.push({
+      code: "invalid_value",
+      values: def.values,
       input,
       inst
     });
@@ -3615,6 +3739,12 @@ function _int(Class, params) {
     check: "number_format",
     abort: false,
     format: "safeint",
+    ...normalizeParams(params)
+  });
+}
+function _boolean(Class, params) {
+  return new Class({
+    type: "boolean",
     ...normalizeParams(params)
   });
 }
@@ -5654,6 +5784,14 @@ var ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def
 function int(params) {
   return _int(ZodNumberFormat, params);
 }
+var ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
+  $ZodBoolean.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json, params);
+});
+function boolean2(params) {
+  return _boolean(ZodBoolean, params);
+}
 var ZodNull = /* @__PURE__ */ $constructor("ZodNull", (inst, def) => {
   $ZodNull.init(inst, def);
   ZodType.init(inst, def);
@@ -5770,14 +5908,6 @@ function strictObject(shape, params) {
     ...normalizeParams(params)
   });
 }
-function looseObject(shape, params) {
-  return new ZodObject({
-    type: "object",
-    shape,
-    catchall: unknown(),
-    ...normalizeParams(params)
-  });
-}
 var ZodUnion = /* @__PURE__ */ $constructor("ZodUnion", (inst, def) => {
   $ZodUnion.init(inst, def);
   ZodType.init(inst, def);
@@ -5788,6 +5918,18 @@ function union(options, params) {
   return new ZodUnion({
     type: "union",
     options,
+    ...normalizeParams(params)
+  });
+}
+var ZodDiscriminatedUnion = /* @__PURE__ */ $constructor("ZodDiscriminatedUnion", (inst, def) => {
+  ZodUnion.init(inst, def);
+  $ZodDiscriminatedUnion.init(inst, def);
+});
+function discriminatedUnion(discriminator, options, params) {
+  return new ZodDiscriminatedUnion({
+    type: "union",
+    options,
+    discriminator,
     ...normalizeParams(params)
   });
 }
@@ -5870,6 +6012,27 @@ function _enum(values, params) {
   return new ZodEnum({
     type: "enum",
     entries,
+    ...normalizeParams(params)
+  });
+}
+var ZodLiteral = /* @__PURE__ */ $constructor("ZodLiteral", (inst, def) => {
+  $ZodLiteral.init(inst, def);
+  ZodType.init(inst, def);
+  inst._zod.processJSONSchema = (ctx, json, params) => literalProcessor(inst, ctx, json, params);
+  inst.values = new Set(def.values);
+  Object.defineProperty(inst, "value", {
+    get() {
+      if (def.values.length > 1) {
+        throw new Error("This schema contains multiple valid literal values. Use `.values` instead.");
+      }
+      return def.values[0];
+    }
+  });
+});
+function literal(value, params) {
+  return new ZodLiteral({
+    type: "literal",
+    values: Array.isArray(value) ? value : [value],
     ...normalizeParams(params)
   });
 }
@@ -6272,7 +6435,19 @@ function operation(kind, definition, handler) {
     assertJson(result.data);
     return result.data;
   };
-  const captured = Object.freeze({ ...definition, kind, input: inputSchema, output: outputSchema, execute });
+  if (definition.idempotent === true && definition.receipt !== undefined && definition.receipt !== "idempotent")
+    throw new Error("idempotent: true conflicts with a non-idempotent receipt declaration");
+  if (definition.idempotent === false && definition.receipt === "idempotent")
+    throw new Error('idempotent: false conflicts with receipt: "idempotent"');
+  const normalizedReceipt = definition.idempotent === true ? "idempotent" : definition.receipt;
+  const captured = Object.freeze({
+    ...definition,
+    ...normalizedReceipt !== undefined ? { receipt: normalizedReceipt } : {},
+    kind,
+    input: inputSchema,
+    output: outputSchema,
+    execute
+  });
   const reference = { kind };
   Object.defineProperty(reference, definitionKey, { value: captured });
   return Object.freeze(reference);
@@ -6715,55 +6890,57 @@ var K = new Uint32Array([
   3329325298
 ]);
 // model.ts
-var resourceSchema = object({
-  title: string2(),
-  path: string2(),
-  root: string2().optional(),
-  linkBase: string2().optional(),
-  revision: string2().optional()
+var linkSchema = object({
+  id: string2(),
+  label: string2(),
+  target: object({ noteId: string2(), recordId: string2() })
 });
-var referenceStateSchema = looseObject({
+var choiceSchema = object({
+  label: string2(),
+  to: string2(),
   title: string2().optional(),
-  resourceRevisions: record(string2(), string2()).optional()
+  hasChildren: boolean2().optional()
+});
+var ancestorSchema = object({
+  key: string2(),
+  name: string2()
 });
 var sceneSchema = object({
   id: string2(),
   title: string2(),
   path: string2(),
   folders: array(string2()),
-  search: string2(),
-  body: string2(),
-  choices: array(object({ label: string2(), to: string2() })),
-  refs: array(object({ note: string2(), id: string2() })).optional(),
+  choices: array(choiceSchema),
   nodeId: string2().optional(),
   storyId: string2().optional(),
-  backgroundAssetId: string2().optional()
+  backgroundAssetId: string2().optional(),
+  excerpt: string2().optional(),
+  ancestors: array(ancestorSchema).optional(),
+  links: array(linkSchema).optional()
 });
-var referenceConfigSchema = looseObject({
-  connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional(),
-  resources: array(resourceSchema),
-  storyIndex: array(sceneSchema).optional(),
-  initialScene: string2().optional()
+var treeItemSchema = discriminatedUnion("kind", [
+  object({ kind: literal("folder"), key: string2(), name: string2(), hasChildren: boolean2() }),
+  object({ kind: literal("scene"), id: string2(), title: string2(), hasChildren: boolean2() })
+]);
+var storyConfigSchema = object({
+  connections: record(string2(), object({ provider: string2(), connectionId: string2() })).optional()
 });
 var note = defineNote({
-  config: { schema: referenceConfigSchema.partial({ resources: true }), defaults: { resources: [] } },
-  update: {
-    dataVersion: "cardgame-story@1",
-    checks: [{
-      name: "关键能力与稳定身份",
-      async run(ctx) {
-        const config = await ctx.config.read();
-        return config.resources === undefined || Array.isArray(config.resources) && config.resources.every((resource) => typeof resource.path === "string" && (resource.title === undefined || typeof resource.title === "string"));
-      }
-    }]
-  }
+  records: [{
+    query: "scenes",
+    items: "/items",
+    next: "/next",
+    route: { path: "/scenes/:id", param: "id" },
+    id: "/id",
+    label: "/title"
+  }],
+  config: { schema: storyConfigSchema, defaults: {} }
 });
 var readInputSchema = object({
-  resourcePath: string2(),
-  path: string2().optional(),
-  from: string2().optional(),
+  path: string2(),
   startLine: number2().int().min(1).optional(),
-  maxLines: number2().int().min(1).max(500).optional()
+  maxLines: number2().int().min(1).max(500).optional(),
+  pages: number2().int().min(1).max(100).optional()
 });
 var documentReadSchema = object({
   resourcePath: string2(),
@@ -6776,125 +6953,116 @@ var documentReadSchema = object({
   endLine: number2(),
   totalLines: number2()
 });
+
 // actions.ts
-var projectIndex = note.query({ visibility: "private", description: "已连接工作树的剧情导航。", output: referenceConfigSchema }, readIndex);
-async function readIndex(ctx) {
-  const config = referenceConfigSchema.parse({ resources: [], ...await ctx.config.read() });
+async function readStory(ctx, input) {
+  const config = storyConfigSchema.parse(await ctx.config.read());
   if (!config.connections?.game)
-    return config;
-  const snap = await ctx.resources.read({ name: "extension.game-project.index", connection: "game", input: {} });
+    return { data: null, revision: "unbound" };
+  const snap = await ctx.resources.read({ name: "extension.game-project.story", connection: "game", input });
   if (snap.error)
     throw Error(snap.error);
-  return snap.data == null ? config : { ...referenceConfigSchema.parse(snap.data), connections: config.connections };
+  return { data: snap.data ?? null, revision: `${snap.epoch}:${snap.version}` };
 }
-var sceneAsset = note.query({ visibility: "private", description: "读取场景明确指定的背景图。", input: object({ sceneId: string2() }), output: string2().nullable() }, async (ctx, { sceneId }) => {
-  const config = await readIndex(ctx), scene = config.storyIndex?.find((row) => row.id === sceneId);
-  if (!config.connections?.game || !scene)
-    return null;
-  let id = scene.backgroundAssetId;
-  if (!id) {
-    const doc = await ctx.resources.read({ name: "extension.game-project.document", connection: "game", input: { path: scene.path, maxLines: 500, pages: 100 } });
-    if (doc.error)
-      throw Error(doc.error);
-    const text = doc.data?.content ?? "";
-    let background;
-    if (scene.path.endsWith(".json")) {
-      try {
-        background = JSON.parse(text).nodes?.find((node) => node.id === scene.nodeId)?.backgroundAsset;
-      } catch {}
-    } else {
-      const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text)?.[1] ?? "";
-      background = /^backgroundAsset:\s*(.*?)\s*$/m.exec(header)?.[1]?.replace(/^(['"])([\s\S]*)\1$/, "$2");
-    }
-    if (typeof background === "string" && /\.(png|jpe?g|webp|svg|avif)$/i.test(background)) {
-      const path = background.startsWith("public/") ? background : "public/" + background.replace(/^\//, "");
-      id = scene.refs?.find((ref) => ref.note === "media" && (ref.id === "asset:" + path || ref.id.endsWith(":" + path)))?.id;
-    }
-  }
-  if (!id || !scene.refs?.some((ref) => ref.note === "media" && ref.id === id))
+var scenes = note.query({
+  visibility: "public",
+  description: "按名称、正文、对白或 ID 分页检索剧情；保留 next 可继续翻页。",
+  input: object({
+    query: string2().optional(),
+    cursor: string2().optional(),
+    offset: number2().int().min(0).optional(),
+    limit: number2().int().min(1).max(50).optional()
+  }),
+  output: object({ configured: boolean2(), total: number2(), items: array(sceneSchema), revision: string2(), next: string2().optional() })
+}, async (ctx, input) => {
+  const { data, revision } = await readStory(ctx, { op: "scenes", ...input });
+  if (!data)
+    return { configured: false, total: 0, items: [], revision };
+  return { configured: true, total: data.total, items: array(sceneSchema).parse(data.items), revision, ...data.next ? { next: data.next } : {} };
+});
+var storyTreePage = note.query({
+  visibility: "private",
+  description: "按目录路径分页读取章节目录项与场景。",
+  input: object({ folderKey: string2().optional(), cursor: string2().optional(), limit: number2().int().min(1).max(50).optional() }),
+  output: object({
+    configured: boolean2(),
+    key: string2(),
+    name: string2(),
+    ancestors: array(ancestorSchema),
+    items: array(treeItemSchema),
+    hasMore: boolean2(),
+    revision: string2(),
+    next: string2().optional()
+  })
+}, async (ctx, input) => {
+  const { data, revision } = await readStory(ctx, { op: "tree", ...input });
+  if (!data)
+    return { configured: false, key: input.folderKey || "[]", name: "全书", ancestors: [], items: [], hasMore: false, revision };
+  return {
+    configured: true,
+    key: data.key,
+    name: data.name,
+    ancestors: array(ancestorSchema).parse(data.ancestors),
+    items: array(treeItemSchema).parse(data.items),
+    hasMore: data.hasMore,
+    revision,
+    ...data.next ? { next: data.next } : {}
+  };
+});
+var scene = note.query({
+  visibility: "public",
+  description: "按稳定 ID 读取单条场景的元数据、选项分支与实时引用（省略 ID 时返回主线入口场景）。",
+  input: object({ id: string2().optional() }),
+  output: object({ configured: boolean2(), initialScene: string2(), scene: sceneSchema.nullable() })
+}, async (ctx, input) => {
+  const { data } = await readStory(ctx, { op: "scene", ...input.id ? { id: input.id } : {} });
+  if (!data)
+    return { configured: false, initialScene: "", scene: null };
+  return { configured: true, initialScene: data.initialScene, scene: data.scene ? sceneSchema.parse(data.scene) : null };
+});
+var storyHome = note.query({
+  visibility: "private",
+  description: "读取紧凑卡片所需的主线起始场景与相邻分支。",
+  input: object({}),
+  output: object({ configured: boolean2(), current: sceneSchema.nullable(), branches: array(sceneSchema) })
+}, async (ctx) => {
+  const { data } = await readStory(ctx, { op: "home" });
+  if (!data)
+    return { configured: false, current: null, branches: [] };
+  return {
+    configured: true,
+    current: data.current ? sceneSchema.parse(data.current) : null,
+    branches: array(sceneSchema).parse(data.branches)
+  };
+});
+var sceneAsset = note.query({
+  visibility: "private",
+  description: "读取场景声明的背景图。",
+  input: object({ sceneId: string2() }),
+  output: string2().nullable()
+}, async (ctx, { sceneId }) => {
+  const { data: current } = await readStory(ctx, { op: "scene", id: sceneId });
+  const id = current?.scene?.backgroundAssetId;
+  if (!id)
     return null;
   const asset = await ctx.resources.read({ name: "extension.game-project.asset", connection: "game", input: { id } });
   if (asset.error)
     throw Error(asset.error);
   return asset.data ?? null;
 });
-var document2 = note.query({ visibility: "public", description: "按已登记资料路径和行范围读取原文件内容。", input: readInputSchema.extend({ pages: number2().int().min(1).max(100).optional() }), output: documentReadSchema.loose() }, async (ctx, input) => {
-  if ((await ctx.config.read()).connections?.game) {
-    const snap = await ctx.resources.read({ name: "extension.game-project.document", connection: "game", input });
-    if (snap.error)
-      throw Error(snap.error);
-    if (snap.data)
-      return documentReadSchema.parse(snap.data);
-  }
-  const startLine = input.startLine ?? 1, maxLines = input.maxLines ?? 240, pages = input.pages ?? 1;
-  if (!Number.isInteger(startLine) || startLine < 1 || !Number.isInteger(maxLines) || maxLines < 1 || maxLines > 500 || !Number.isInteger(pages) || pages < 1 || pages > 100)
-    throw new Error("Invalid document line range");
-  const snapshot = await ctx.resources.read({ name: "extension.reference.file", input: { resourcePath: input.resourcePath, ...input.path ? { path: input.path } : {}, ...input.from ? { from: input.from } : {} } });
-  if (snapshot.error)
-    throw new Error(snapshot.error);
-  const source = snapshot.data;
-  if (!source)
-    throw new Error("资料尚未读入，请调用 refreshDocument 后重试。");
-  return { ...source, content: source.content.split(/\r?\n/).slice(startLine - 1, startLine - 1 + maxLines * pages).join(`
-`), startLine, endLine: Math.min(source.totalLines, startLine - 1 + maxLines * pages) };
-});
-var refreshDocument = note.action({
+var document2 = note.query({
   visibility: "public",
-  description: "读取已登记的本机资料并发布快照；首次读取或需要最新磁盘版本时调用。",
-  input: readInputSchema.extend({ pages: number2().int().min(1).max(100).optional() }),
-  output: documentReadSchema.loose()
+  description: "按项目内相对路径和行范围实时读取剧情原文件。",
+  input: readInputSchema,
+  output: documentReadSchema.nullable()
 }, async (ctx, input) => {
-  const config = await ctx.runQuery(projectIndex, {});
-  if (config.connections?.game) {
-    await ctx.resources.revalidate({ name: "extension.game-project.document", connection: "game", input });
-    return ctx.runQuery(document2, input);
-  }
-  const snapshot = await ctx.resources.revalidate({ name: "extension.reference.file", input: { resourcePath: input.resourcePath, ...input.path ? { path: input.path } : {}, ...input.from ? { from: input.from } : {} } });
-  if (snapshot.error || !snapshot.data)
-    throw new Error(snapshot.error ?? "资料尚未就绪");
-  return ctx.runQuery(document2, input);
-});
-var addResource = note.action({ description: "登记一份可读取的本机文件或资料目录。", input: object({ path: string2(), title: string2().optional() }), output: resourceSchema, visibility: "private", requiresConfig: false }, async (ctx, input) => {
-  const resource = resourceSchema.parse(await ctx.host.extensions.request("reference", "inspectResource", input));
-  await ctx.runMutation(registerResource, resource);
-  return resource;
-});
-var registerResource = note.mutation({ input: resourceSchema, output: resourceSchema }, async (ctx, resource) => {
-  const config = await ctx.config.read();
-  const resources = config.resources ?? [];
-  if (resources.some((item) => item.path === resource.path))
-    throw new Error("这份资料已经登记，可以直接在列表中打开。");
-  await ctx.config.update({ resources: [...resources, resource] });
-  return resource;
-});
-var indexInput = object({ storyIndex: array(sceneSchema), initialScene: string2() });
-var setStoryIndex = note.mutation({
-  visibility: "public",
-  description: "更新来自已绑定 CardGame 检出的剧情导航索引；正文仍由 document 读取。",
-  input: indexInput,
-  output: object({ count: number2() })
-}, async (ctx, input) => {
-  const ids = new Set(input.storyIndex.map((row) => row.id));
-  if (ids.size !== input.storyIndex.length || input.initialScene && !ids.has(input.initialScene))
-    throw Error("剧情索引包含重复或缺失的场景");
-  await ctx.config.update(input);
-  return { count: ids.size };
-});
-var recordInfo = sceneSchema.omit({ search: true, body: true });
-var scenes = note.query({
-  visibility: "public",
-  description: "按名称、正文、对白或 ID 检索剧情；返回原文件与分支目标。",
-  input: object({ query: string2().optional(), offset: number2().int().min(0).optional(), limit: number2().int().min(1).max(100).optional() }),
-  output: object({ total: number2(), items: array(recordInfo) })
-}, async (ctx, input) => {
-  const rows = (await readIndex(ctx)).storyIndex ?? [];
-  const words = (input.query ?? "").normalize("NFKC").trim().toLowerCase().split(/\s+/).filter(Boolean);
-  const resolved = rows.filter((row) => {
-    const text = [row.id, row.title, ...row.folders, row.search].join(" ").normalize("NFKC").toLowerCase();
-    return words.every((w) => text.includes(w));
-  });
-  const offset = input.offset ?? 0;
-  return { total: resolved.length, items: resolved.slice(offset, offset + (input.limit ?? 30)).map(({ search, body, ...info }) => info) };
+  const config = storyConfigSchema.parse(await ctx.config.read());
+  if (!config.connections?.game)
+    return null;
+  const snap = await ctx.resources.read({ name: "extension.game-project.document", connection: "game", input });
+  if (snap.error)
+    throw Error(snap.error);
+  return snap.data ? documentReadSchema.parse(snap.data) : null;
 });
 
 var SAVED_IMAGE_LIMITS = Object.freeze({ bytes: 512 * 1024, totalBytes: 2 * 1024 * 1024, count: 8, dimension: 1600 });

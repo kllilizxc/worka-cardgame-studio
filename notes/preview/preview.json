@@ -1,0 +1,27 @@
+{
+  "now": "2026-11-02T09:30:00+08:00",
+  "documents": [
+    {
+      "collection": "metadata",
+      "id": "root",
+      "value": {
+        "title": "设计候选",
+        "attached": []
+      }
+    },
+    {
+      "collection": "candidates",
+      "id": "sample",
+      "value": {
+        "key": "sample",
+        "title": "习惯卡片方案",
+        "receivedAt": 1793583000000,
+        "view": {
+          "key": "sample",
+          "title": "习惯卡片方案",
+          "receivedAt": 1793583000000
+        }
+      }
+    }
+  ]
+}

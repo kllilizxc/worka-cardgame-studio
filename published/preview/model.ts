@@ -1,5 +1,5 @@
-import { defineNote, z } from '@dsh-workbench/runtime';
-import { candidateInputSchema, candidateSchema, dataSchema, feedbackSchema } from './schemas';
+import { defineNote, z } from '@realiz3r/worka-runtime';
+import { candidateInputSchema, candidateSchema, dataSchema } from './schemas';
 import { rowState } from './projection';
 export { validateCandidateIdentity, previewRows, rowState } from './projection';
 export type { PreviewRow } from './projection';
@@ -11,25 +11,21 @@ export type SurfaceStatus = NonNullable<CandidateSpec['status']>[string];
 export type SurfacePhase = SurfaceStatus['phase'];
 export type SurfaceStep = NonNullable<SurfaceStatus['steps']>[number];
 export type SurfaceFailure = NonNullable<SurfaceStatus['failure']>;
-export type Feedback = z.infer<typeof feedbackSchema>;
 export type Data = z.infer<typeof dataSchema>;
 
 const configSchema = z.object({
-  connections:z.record(z.string(),z.object({provider:z.string(),connectionId:z.string()})).optional(),
-  gameRoot:z.string().optional(),gameCommit:z.string().regex(/^[a-f0-9]{40}$/).optional(),adapter:z.string().optional(),coverAsset:z.string().optional(),
   previewDesk:z.object({home:z.string(),cli:z.string()}).optional(),
-  feedbackInTodo: z.boolean().optional(), projectId: z.string().optional(),
   notes: z.object({ todo: z.string().optional(), execution: z.string().optional() }).optional(),
 });
 
 export const note = defineNote({
+  records: ['candidates','archivedCandidates'].map(collection=>({collection,id:'/id',route:{path:'/candidates/:candidateId',param:'candidateId'},label:'/title',links:[{noteId:'/originNoteId',recordId:'/delegationId'}],identities:[{namespace:'feature',value:'/featureId'}]})),
+
   config: { schema: configSchema, defaults: {} },
   collections: {
     candidates: { schema: candidateSchema.extend({view:candidateSchema}), indexes: [['receivedAt'], ['originNoteId', 'delegationId'], ['featureId']] },
     archivedCandidates: { schema: candidateSchema.extend({view:candidateSchema}), indexes: [['receivedAt'], ['originNoteId', 'delegationId'], ['featureId']] },
-    outbox: { schema: feedbackSchema.omit({ id: true }), indexes: [['candidateKey'], ['observedAt']] },
-    feedbackHistory: { schema: z.object({ report: feedbackSchema, observedAt: z.number(), userRequested: z.boolean() }), indexes: [['observedAt']] },
-    metadata: { schema: z.object({ title: z.string(), attached: z.array(z.string()), feedbackError: z.string().nullable() }) },
+    metadata: { schema: z.looseObject({ title: z.string(), attached: z.array(z.string()) }) },
   },
   update: {
     dataVersion: 'candidate-preview@2',

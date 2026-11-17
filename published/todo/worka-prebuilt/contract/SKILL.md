@@ -1,26 +1,37 @@
 ---
 name: worka-todo
-description: 维护待办、更新状态或把稳定事项与原生对话关联。
+description: Maintain todos, update status, or link stable items to native conversations.
 ---
 
-维护原生 `items` 集合中的稳定 ID。`addTodo` 创建，`updateStatus` 明确设置状态，`toggleTodo` 翻转当前状态，`removeTodo`/`clearCompleted` 删除记录（批量清理返回 pending 时由宿主继续后续页）；不要把可重试的设置操作改成重复 toggle。
+Maintain stable IDs in the native `items` collection. `addTodo` creates, `updateStatus` explicitly sets status, `toggleTodo` flips the current status, and `removeTodo`/`clearCompleted` delete records (when bulk cleanup returns pending, the host continues subsequent pages). Do not turn a retryable set operation into repeated toggles.
 
-交办使用 `requestDelegation`，指定稳定 itemId 并核对当次交办事件回执。`feedback` 接收执行结果；完成以实际回执和持久状态为准。`generateSuggestions` 提交受管模型任务并返回任务引用；只有完成处理器写入后才算建议已生成。编辑已有内容用 `editTodo` 及其 baseFingerprint 字段（取单项 requirement 查询返回的 revision，不重复提交 baseline 图片），保留并发修改。辅助路径/状态函数不是推荐的业务调用入口。
+Delegate with `requestDelegation`, specifying the stable itemId and checking that delegation event's receipt. `feedback` receives execution results; determine completion from actual receipts and durable state. `generateSuggestions` submits a managed model task and returns a task reference; suggestions exist only after the completion handler writes them. Edit existing content with `editTodo` and its baseFingerprint (the revision returned by the single-item requirement query), without resubmitting baseline images, preserving concurrent changes. Helper path/status functions are not the recommended business entry points.
 
-进展回写使用 `recordProgress({itemId,status,summary?,conclusion?,expectedRevision?})`；本 Todo 的兼容 `feedback` 接口同样区分短摘要与完整结论。`summary` 用一句“已核实的结果或阻碍＋下一步”，中文建议 40–60 字、最多 100 字，英文最多 180 字符。没有下一步就只写结果；结果未知则直说尚未核实，不能为缩短文案虚构成功。commit 哈希、路径、taskId、featureId、工具回执及重复的权限说明放入完整 `conclusion` 或关联原记录，不塞进摘要。没有新事实不反复回写。先核对当前接口 schema，不把本字段套到旧执行台或其他便笺的反馈接口。
+Write progress using the Workbench method `action.invoke` with `{noteId,action:"recordProgress",input:{itemId,status,summary?,conclusion?,expectedRevision?}}`. In a connection session use `call` with `{noteId,kind:"action",name:"recordProgress",input:{itemId,status,summary?,conclusion?,expectedRevision?}}`. This Todo's compatible `feedback` interface also separates a short summary from the full conclusion. `summary` is one sentence stating the verified result or blocker and next step: 40–60 Chinese characters recommended, at most 100 Chinese characters or 180 English characters. For a blocker, name who or what can unblock it and a concrete action the user or responsible session can take. If the blocker is not understood, say what needs investigation rather than implying a permission is missing. For a completed result without a next step, state only the result. If unknown, say it has not been verified; do not invent success for brevity. Put commit hashes, paths, taskId, featureId, tool receipts and repeated permission details in the full `conclusion` or linked original record, not the summary. Do not repeat writeback without new facts. Check the current interface schema first; do not apply this field to old execution desks or other notes' feedback interfaces.
 
-外部创建示例：`action.invoke({noteId,action:"addTodo",input:{title:"核对交付结果",priority:"medium"}})`。随后 item({itemId}) 查询读回新事项。
+External creation example: `action.invoke({noteId,action:"addTodo",input:{title:"Check delivery results",priority:"medium"}})`. Then read the new item back with the item({itemId}) query.
 
-连线订阅事件时：交办只需 `items.delegationRequested`，普通编辑是 `items.changed`；只选业务需要的那个。
+When subscribing to events, delegation needs only `items.delegationRequested`; ordinary edits are `items.changed`. Select only what the business requires.
 
-`itemPage` 只返回分页摘要，使用返回的 `next` 作为下次 `cursor`；分类/状态筛选由原生查询处理，标题子串只匹配当前页；无 total，空页有 next 仍需继续。用 `item {itemId}` 读取选定条目摘要和 requirementRevision；`requirement {itemId}` 读取完整可编辑字段及需求指纹，不复制内部投递或来源 payload。创建与编辑回执仅含稳定 itemId 和 revision；业务内容从查询读取，不从回执拼状态。
+`itemPage` returns paginated summaries only; use its `next` as the next `cursor`. Native queries handle category/status filters, while title substrings match only the current page. There is no total; continue if an empty page has next. Use `item {itemId}` for the selected item summary and requirementRevision, and `requirement {itemId}` for full editable fields and requirement fingerprint, without copying internal delivery or source payloads. Create and edit receipts contain only stable itemId and revision; read business content from queries, not reconstructed receipts.
 
-文件附件使用当前便笺的 `files` 引用，最多 20 个、每个 4 MiB。`addTodo` 可传 `description`、`attachments:[{id}]`；`editTodo` 也可更新 attachments、priority、category、dueDate，沿用 requirement 返回的 baseFingerprint。省略 attachments 保留原值，空数组移除。引用不授予其他便笺读取权限，交办不等于共享文件内容。列表仅含 attachmentCount，完整元数据按单项读取，文件字节仅按明确需要读取。
+File attachments use the current note's `files` references: at most 20, each up to 20 MiB. `addTodo` accepts `description` and `attachments:[{id}]`; `editTodo` can also update attachments, priority, category and dueDate, using the requirement's baseFingerprint. Omitted attachments preserve existing values; an empty array removes them. References do not grant other notes read permission, and delegation does not share file contents. Lists contain only attachmentCount; read full metadata per item and file bytes only when explicitly needed.
 
-事项拥有来源、结论和 sessions 引用，不另设执行台。执行只发生在已关联的原生会话，linkSession 只记关联；executionDetails 读全部来源和会话，sessionItems 分页发现会话，sessionTask 由原 taskId 找全部关联事项。来源先核对真实便笺/对象ID，名称和图标用当前元数据，不按标题猜来源。新会话以本 Todo 为 noteId，准备和关联成功才发送明确要求。
+Items own source, conclusion and session references; there is no separate execution desk. Execution happens only in linked native sessions. linkSession only records the relationship; executionDetails reads all sources and sessions, sessionItems discovers sessions by page, and sessionTask finds all linked items from the original taskId. Check actual source note/object IDs first; use current metadata for names and icons rather than guessing from titles. New sessions use this Todo as noteId; send explicit instructions only after preparation and linking succeed.
 
-列表主信息为标题、状态、来源与对话入口；需求全文、附件、来源跳转和成果关联在详情弹窗。详情常显进展时间线的短摘要，完整结论按需打开；时间采用实际记录事实，不推造开始、验收或完成阶段。归档不改变业务状态，也不自动恢复执行。多会话/多事项保留完整关系；从旧 taskId 进入若对应多项应提供选择，不能取第一项。
+The list emphasizes title, status, source and conversation entry. Full requirements, attachments, source links and result associations are in the detail dialog. Short progress timeline summaries stay visible; full conclusions open on demand. Times reflect recorded facts, not invented start, acceptance or completion stages. Archiving changes no business status and does not automatically resume execution. Preserve all many-to-many session/item relations; if an old taskId maps to multiple items, offer a choice rather than picking the first.
 
-任务卡只能由用户确认完成。Agent 和连线只回写实际进展，认为本次要求已完成时移到 `blocking`，说明待用户 review；不得通过 `updateStatus`、`toggleTodo`、`moveTodo` 或导入接口绕过。`recordProgress` / `feedback` 不允许把未完成事项写成 `done`；已有用户确认的完成状态可保留。
+When work starts, record `in_progress`. Once the requested work is verified and its deliverable saved, record `done` with a concise conclusion and a reachable link or linked session. For a request to draft, a saved usable draft completes the item even if it has clearly marked placeholders or has not been reviewed or sent; keep it open only if the user actually requested the later action or missing facts prevent a usable draft. The user can reopen the item. Use `blocking` only when work actually needs user action or is otherwise blocked; a finished model turn alone does not establish completion.
 
-本桌面处理卡牌游戏制作。记点子由点子库承担；明确说要实现才交办。制作连线在开工时检索旧灵感，建议和采纳结果留在本事项原生对话。交付游戏修改时，记录源游戏仓库、可重建的完整 commit、试玩起点与实测结果，再通过「试玩」的公开入口交付。
+When creating a Todo, set `workKind: "answer"` only for a clearly read-only question or response; set `workKind: "change"` for implementation, configuration, publishing or other work that changes something. If uncertain, omit it. If an answer item later expands to change work, call `markChangeWork({itemId})` before acting so delivery connections can observe its existing sessions. Never use a title or keyword alone to infer this field.
+
+When recording a blocker, explain who can unblock it and the concrete next step. If asking another note is appropriate, supply `unblockAction: {label, target: {noteId}, request}` to `recordProgress` or `feedback`: label is a short user-facing action and request is the exact message the user can review and send. Use the actual same-desktop note ID. Only attach it while status is `blocking`; do not send it automatically. The user chooses the button. Remove or replace the action when the blocker changes.
+
+
+## 卡牌游戏创作室
+
+本桌面的制作事项在已绑定 CardGame 仓库（路径与 `playtest/preview.config.mjs` 适配器见上下文中的 `game-project` 说明）的独立 Git 分支/工作树上实施：
+
+1. 开工时若有相关旧点子，在对话中一并提及并结合本次需求处理；创建独立分支与工作树（如 `git -C <gameRoot> worktree add <dir> -b feat/<slug> main`），修改游戏文件并运行游戏的检查（相关 `bun test` 或 `bun run typecheck`），提交得到完整 40 位 `commit`。
+2. 调用「试玩」便笺的 `receive`：`{key: itemId, title, adapter, repos: {game: {repo: gameRoot, commit}}, options: {entry: {kind: "story"|"map"|"encounter", resourceId, nodeId?}}, originNoteId: 本Todo的noteId, delegationId: itemId, start: true, embed: true}`，核对候选启动就绪后在对话中发出试玩链接（格式 `[/notes/<试玩noteId>/candidates/<itemId>]`，即 Markdown 链接指向 `/notes/<试玩noteId>/candidates/<itemId>`），并用 `recordProgress` 保持 `in_progress` 等待试玩反应。
+3. 试玩反馈回到本会话：如需调整，在同一分支继续提交并用同一 `key` 更新 `receive`；当用户回复 `OK` 时，将分支合入绑定仓库的 `main`（若 `origin` 是 GitHub 远端则执行 `git -C <gameRoot> push origin main`），清理临时工作树与分支，并调用 `recordProgress({itemId, status: "done", summary, conclusion})` 完成事项。

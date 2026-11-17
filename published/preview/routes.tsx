@@ -1,4 +1,4 @@
-import {useUi} from '@dsh-workbench/react';
+import {useUi} from '@realiz3r/worka-react';
 import {ui} from './messages';
 import {Link, type RouteObject} from 'react-router';
 import {PreviewLayout} from './view-expanded';

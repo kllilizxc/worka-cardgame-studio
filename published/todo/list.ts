@@ -1,7 +1,7 @@
-import { z } from '@dsh-workbench/runtime';
-import { sha256 } from '@dsh-workbench/runtime';
+import { z } from '@realiz3r/worka-runtime';
+import { sha256 } from '@realiz3r/worka-runtime';
 import { displaySourceSchema, normalizeStatus, todoImageSchema, type TodoItem } from './model';
-import type { NoteQueryContext } from '@dsh-workbench/runtime';
+import type { NoteQueryContext } from '@realiz3r/worka-runtime';
 import type { note } from './model';
 import { attachmentsSchema } from './attachment-schema';
 

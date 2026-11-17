@@ -1,4 +1,4 @@
-import { z } from '@dsh-workbench/runtime';
+import { z } from '@realiz3r/worka-runtime';
 export * from './model';
 export declare const delegateTodoInputSchema: z.ZodObject<{
     itemId: z.ZodString;
@@ -18,6 +18,13 @@ export declare const feedbackInputSchema: z.ZodObject<{
     }>;
     conclusion: z.ZodString;
     expectedRevision: z.ZodOptional<z.ZodString>;
+    unblockAction: z.ZodOptional<z.ZodObject<{
+        label: z.ZodString;
+        target: z.ZodObject<{
+            noteId: z.ZodString;
+        }, z.core.$strip>;
+        request: z.ZodString;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 export declare const moveTodoInputSchema: z.ZodObject<{
     id: z.ZodString;
@@ -69,6 +76,10 @@ export declare const importItemInputSchema: z.ZodObject<{
         low: "low";
         medium: "medium";
     }>>;
+    workKind: z.ZodOptional<z.ZodEnum<{
+        answer: "answer";
+        change: "change";
+    }>>;
     category: z.ZodOptional<z.ZodString>;
     dueDate: z.ZodOptional<z.ZodString>;
     source: z.ZodOptional<z.ZodObject<{
@@ -91,6 +102,10 @@ export declare const importItemsInputSchema: z.ZodObject<{
             high: "high";
             low: "low";
             medium: "medium";
+        }>>;
+        workKind: z.ZodOptional<z.ZodEnum<{
+            answer: "answer";
+            change: "change";
         }>>;
         category: z.ZodOptional<z.ZodString>;
         dueDate: z.ZodOptional<z.ZodString>;
@@ -121,12 +136,13 @@ export declare const importItemResultSchema: z.ZodObject<{
     }, z.core.$strip>>;
     error: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
-export declare const changed: Readonly<import("@dsh-workbench/runtime").NoteEvent<z.ZodObject<{
+export declare const changed: Readonly<import("@realiz3r/worka-runtime").NoteEvent<z.ZodObject<{
     itemId: z.ZodString;
     title: z.ZodString;
     revision: z.ZodString;
+    workKind: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>>>;
-export declare const delegationRequested: Readonly<import("@dsh-workbench/runtime").NoteEvent<z.ZodObject<{
+export declare const delegationRequested: Readonly<import("@realiz3r/worka-runtime").NoteEvent<z.ZodObject<{
     itemId: z.ZodString;
     title: z.ZodString;
     revision: z.ZodString;
@@ -147,7 +163,16 @@ export declare const delegationRequested: Readonly<import("@dsh-workbench/runtim
             jobId: z.ZodOptional<z.ZodString>;
             error: z.ZodOptional<z.ZodString>;
         }, z.core.$strip>>;
+        unblockAction: z.ZodOptional<z.ZodObject<{
+            label: z.ZodString;
+            target: z.ZodObject<{
+                noteId: z.ZodString;
+            }, z.core.$strip>;
+            request: z.ZodString;
+            requestId: z.ZodString;
+        }, z.core.$strip>>;
         id: z.ZodString;
+        featureId: z.ZodOptional<z.ZodString>;
         sessions: z.ZodOptional<z.ZodArray<z.ZodObject<{
             taskId: z.ZodString;
             sessionId: z.ZodString;
@@ -234,6 +259,7 @@ export declare const delegationRequested: Readonly<import("@dsh-workbench/runtim
             queued: "queued";
             started: "started";
         }>>;
+        workKind: z.ZodOptional<z.ZodString>;
         status: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
             blocking: "blocking";
             done: "done";

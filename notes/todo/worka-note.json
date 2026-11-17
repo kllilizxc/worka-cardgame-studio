@@ -18,7 +18,12 @@
     }
   },
   "schemaVersion": 1,
-  "name": "制作待办",
+  "style": "custom",
+  "name": "待办",
+  "compactSize": {
+    "width": 340,
+    "height": 400
+  },
   "scenarios": "手上事情多、总忘记跟进的人：随手记下要做的事和截止时间，每天看一眼今天要做什么。",
   "locales": {
     "en": {
@@ -32,17 +37,15 @@
     "monochrome": true
   },
   "files": [
-    "LICENSE",
     "README.md",
     "SKILL.md",
     "actions.ts",
     "assets.d.ts",
-    "assignment.ts",
     "attachment-schema.ts",
     "collaboration.ts",
     "compact.tsx",
     "contracts.ts",
-    "create-task-dialog.tsx",
+    "default-category.ts",
     "expanded.tsx",
     "file-attachments.tsx",
     "folio.css",
@@ -52,26 +55,25 @@
     "messages.ts",
     "model.ts",
     "package.json",
-    "progress-store.ts",
-    "progress-timeline.tsx",
-    "progress.ts",
     "record-links.tsx",
+    "result-links.tsx",
     "requirement-editor.tsx",
-    "route-search.ts",
-    "route-state.ts",
-    "routes.tsx",
-    "schedule.ts",
+    "state.ts",
+    "todo-composer.ts",
+    "view-shared.tsx",
+    "view.tsx",
     "sessions.ts",
     "source-label.tsx",
-    "state.ts",
     "task-dialog.tsx",
-    "task-fields.tsx",
-    "tile.css",
-    "todo-composer.ts",
+    "progress-timeline.tsx",
+    "progress.ts",
+    "progress-store.ts",
+    "route-state.ts",
+    "routes.tsx",
     "todo-layout.tsx",
-    "todo-timeline.tsx",
-    "use-optimistic-moves.ts",
-    "view-shared.tsx",
-    "view.tsx"
+    "mobile-lane.ts",
+    "route-search.ts",
+    "todo-unblock.tsx",
+    "preview.json"
   ]
 }

@@ -19,9 +19,9 @@ __export(exports_actions, {
   cover: () => cover,
   findIdeas: () => findIdeas,
   idea: () => idea,
-  installExampleWork: () => installExampleWork,
   note: () => note,
-  remember: () => remember
+  remember: () => remember,
+  saved: () => saved
 });
 
 
@@ -1007,7 +1007,6 @@ function datetime(args) {
 var anyString = /^[\s\S]{0,}$/;
 var integer = /^-?\d+$/;
 var number = /^-?\d+(?:\.\d+)?$/;
-var boolean = /^(?:true|false)$/i;
 var _null = /^null$/i;
 var lowercase = /^[^A-Z]*$/;
 var uppercase = /^[^a-z]*$/;
@@ -1869,26 +1868,6 @@ var $ZodNumber = /* @__PURE__ */ $constructor("$ZodNumber", (inst, def) => {
 var $ZodNumberFormat = /* @__PURE__ */ $constructor("$ZodNumberFormat", (inst, def) => {
   $ZodCheckNumberFormat.init(inst, def);
   $ZodNumber.init(inst, def);
-});
-var $ZodBoolean = /* @__PURE__ */ $constructor("$ZodBoolean", (inst, def) => {
-  $ZodType.init(inst, def);
-  inst._zod.pattern = boolean;
-  inst._zod.parse = (payload, _ctx) => {
-    if (def.coerce)
-      try {
-        payload.value = Boolean(payload.value);
-      } catch (_) {}
-    const input = payload.value;
-    if (typeof input === "boolean")
-      return payload;
-    payload.issues.push({
-      expected: "boolean",
-      code: "invalid_type",
-      input,
-      inst
-    });
-    return payload;
-  };
 });
 var $ZodNull = /* @__PURE__ */ $constructor("$ZodNull", (inst, def) => {
   $ZodType.init(inst, def);
@@ -3478,12 +3457,6 @@ function _int(Class, params) {
     check: "number_format",
     abort: false,
     format: "safeint",
-    ...normalizeParams(params)
-  });
-}
-function _boolean(Class, params) {
-  return new Class({
-    type: "boolean",
     ...normalizeParams(params)
   });
 }
@@ -5523,14 +5496,6 @@ var ZodNumberFormat = /* @__PURE__ */ $constructor("ZodNumberFormat", (inst, def
 function int(params) {
   return _int(ZodNumberFormat, params);
 }
-var ZodBoolean = /* @__PURE__ */ $constructor("ZodBoolean", (inst, def) => {
-  $ZodBoolean.init(inst, def);
-  ZodType.init(inst, def);
-  inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json, params);
-});
-function boolean2(params) {
-  return _boolean(ZodBoolean, params);
-}
 var ZodNull = /* @__PURE__ */ $constructor("ZodNull", (inst, def) => {
   $ZodNull.init(inst, def);
   ZodType.init(inst, def);
@@ -6117,7 +6082,19 @@ function operation(kind, definition, handler) {
     assertJson(result.data);
     return result.data;
   };
-  const captured = Object.freeze({ ...definition, kind, input: inputSchema, output: outputSchema, execute });
+  if (definition.idempotent === true && definition.receipt !== undefined && definition.receipt !== "idempotent")
+    throw new Error("idempotent: true conflicts with a non-idempotent receipt declaration");
+  if (definition.idempotent === false && definition.receipt === "idempotent")
+    throw new Error('idempotent: false conflicts with receipt: "idempotent"');
+  const normalizedReceipt = definition.idempotent === true ? "idempotent" : definition.receipt;
+  const captured = Object.freeze({
+    ...definition,
+    ...normalizedReceipt !== undefined ? { receipt: normalizedReceipt } : {},
+    kind,
+    input: inputSchema,
+    output: outputSchema,
+    execute
+  });
   const reference = { kind };
   Object.defineProperty(reference, definitionKey, { value: captured });
   return Object.freeze(reference);
@@ -6567,11 +6544,23 @@ var fields = {
   tags: array(string2().trim().min(1).max(80)).max(16)
 };
 var row = object({ ...fields, revision: number2().int(), updatedAt: number2() });
-var note = defineNote({ config: { schema: object({ includeExampleWork: boolean2().optional() }), defaults: {} }, collections: { ideas: { schema: row, indexes: [["updatedAt"], ["category", "updatedAt"]] } } });
+var note = defineNote({
+  records: [{ collection: "ideas", id: "/id", route: { path: "/ideas/:id", param: "id" }, label: "/title" }],
+  collections: { ideas: { schema: row, indexes: [["updatedAt"], ["category", "updatedAt"]] } }
+});
 
 // actions.ts
 var idSchema2 = string2().regex(/^[\w.-]{1,128}$/);
 var recordSchema = row.extend({ id: idSchema2 });
+var saved = note.event({
+  name: "ideas.saved",
+  visibility: "public",
+  description: "点子已存入或更新。",
+  payload: recordSchema,
+  objectRef: "/id",
+  objectLabel: "/title",
+  revision: "/revision"
+});
 var idea = note.query({ visibility: "public", description: "读取点子的原话、标题、分类与标签。", input: object({ id: idSchema2 }), output: recordSchema.nullable(), objectRef: "/id" }, (ctx, { id }) => ctx.db.get("ideas", id));
 var cover = note.query({ visibility: "private", input: object({}), output: object({ title: string2(), countLabel: string2(), items: array(object({ id: string2(), title: string2(), category: string2() })) }) }, async (ctx) => {
   const page = await ctx.db.page("ideas", { orderBy: { updatedAt: "desc" }, select: ["title", "category"] });
@@ -6599,7 +6588,7 @@ var findIdeas = note.query({
 });
 var remember = note.mutation({
   visibility: "public",
-  description: "按稳定 ID 记一条灵感，保留原话。更新时传已读 revision。",
+  description: "按稳定 ID 保存一条点子原话，并发布 ideas.saved 事件。更新已有记录时传 expectedRevision。",
   input: object({ id: idSchema2, ...fields, expectedRevision: number2().int().nonnegative().optional() }),
   output: recordSchema,
   objectRef: "/id"
@@ -6612,25 +6601,9 @@ var remember = note.mutation({
     throw Error("这条点子已有更新，请重新读取。");
   const next = { ...values, revision: (previous?.revision ?? 0) + 1, updatedAt: Date.now() };
   await ctx.db.put("ideas", id, next);
-  return { id, ...next };
-});
-var installExampleWork = note.mutation({ visibility: "private", output: _null3() }, async (ctx) => {
-  if (!(await ctx.config.read()).includeExampleWork)
-    return null;
-  if (!(await ctx.db.page("ideas", { select: [] })).items.length) {
-    const examples = [
-      ["idea-bell-exit", "让铃声暴露撤离点", "响铃的玩家能循声撤出，山里的敌人也会听见。", "探索机制", ["撤离", "铜铃", "雾林"]],
-      ["idea-rain-merchant", "雨夜的另一个商人", "雨落在空摊上时，另一个人来开店。", "商店", ["商人", "雨夜"]],
-      ["idea-herb-scent", "用草药气味引来妖兽", "把草药搓碎，能不能让潜藏的妖兽现身？", "探索机制", ["草药", "灵兽"]],
-      ["idea-failed-clue", "失败也能触发隐藏剧情", "第一次没能撤离时，让留在山中的物品变成下一章的线索。", "剧情", ["跨局", "线索"]]
-    ];
-    const timestamp = Date.parse("2026-10-31T02:30:00Z");
-    for (const [index, [id, title, text, category, tags]] of examples.entries()) {
-      await ctx.db.put("ideas", id, { title, text, category, tags: [...tags], revision: 1, updatedAt: timestamp - index });
-    }
-  }
-  await ctx.config.update({ includeExampleWork: false });
-  return null;
+  const record = { id, ...next };
+  await saved.publish(ctx, record, { key: `${id}:${next.revision}` });
+  return record;
 });
 
 var SAVED_IMAGE_LIMITS = Object.freeze({ bytes: 512 * 1024, totalBytes: 2 * 1024 * 1024, count: 8, dimension: 1600 });

@@ -1,12 +1,14 @@
+import { DEFAULT_CATEGORY } from './default-category';
 import { validateAttachments, attachmentsSchema } from './attachment-schema';
-import { taskOutcome, z, type TaskOutcomeSource } from '@dsh-workbench/runtime';
+import { taskOutcome, z, type TaskOutcomeSource } from '@realiz3r/worka-runtime';
 import { note, delegateTodoInputSchema, editTodoInputSchema, feedbackInputSchema, importItemInputSchema,
   importItemResultSchema, importItemsInputSchema, moveTodoInputSchema, todoStatusSchema, todoItemSchema, delegationRequested } from './contracts';
 import { getItem, business, saveItem, insertItem, importKey, between, type WriteContext } from './state';
 import { todoRequirementFingerprint } from './list';
 import type { TodoImage, TodoItem, TodoStatus } from './model';
-import { sameProgress } from './progress';
+import { sameProgress, unblockForProgress } from './progress';
 import { appendProgress } from './progress-store';
+import { announceChangeSessions } from './sessions';
 export type { TodoData, TodoImage, TodoItem, TodoItemSource, TodoPriority, TodoStatus } from './model';
 export { normalizeStatus } from './model';
 export type DelegateTodoInput = z.infer<typeof delegateTodoInputSchema>;
@@ -83,9 +85,11 @@ export const feedback = note.mutation({ description: '将结果和结论写回�
   if (!input.conclusion.trim()) throw new Error('反馈需要 conclusion');
   const row = await getItem(ctx, input.itemId);
   if (input.expectedRevision && input.expectedRevision !== String(row.revision)) throw new Error('待办版本已变化，请重新读取');
-  if (input.status === 'done' && row.status !== 'done') throw new Error('只有用户可以确认任务完成；请移到 blocking 并记录待用户 review 的成果');
-  if (sameProgress(business(row), {status:input.status,conclusion:input.conclusion})) return {itemId:row.id,status:row.status,revision:String(row.revision)};
-  const item = { ...business(row), status: input.status, completed: input.status === 'done', conclusion: input.conclusion.trim(),
+  if (input.unblockAction && input.status !== 'blocking') throw Error('解除阻塞操作只能用于阻塞中的待办');
+  const current=business(row), unblockAction=input.status==='blocking' ? unblockForProgress(current,input.unblockAction,ctx.note.id,String(row.revision)) : undefined;
+  if (sameProgress(current, {status:input.status,conclusion:input.conclusion}) && JSON.stringify(current.unblockAction??null)===JSON.stringify(unblockAction??null)) return {itemId:row.id,status:row.status,revision:String(row.revision)};
+  const {unblockAction:_oldAction,...withoutAction}=current;
+  const item = { ...withoutAction, status: input.status, completed: input.status === 'done', conclusion: input.conclusion.trim(), ...(unblockAction?{unblockAction}:{}),
     delegatedAt: row.delegatedAt ?? new Date().toISOString(), delegatedRunStatus: 'completed' as const };
   const revision = await saveItem(ctx, item, item.id);
   await appendProgress(ctx, item, revision, 'feedback', {summary:input.summary,conclusion:input.conclusion});
@@ -102,8 +106,9 @@ export function createTodoItem(
     title: input.title.trim(),
     status,
     completed: status === "done",
+    ...(input.workKind ? {workKind: input.workKind} : {}),
     priority: input.priority ?? "medium",
-    category: input.category?.trim() || "日常",
+    category: input.category?.trim() || DEFAULT_CATEGORY,
     ...(input.dueDate ? { dueDate: input.dueDate } : {}),
     createdAt: identity.createdAt,
     ...(input.description?.trim() ? { description: input.description.trim() } : {}),
@@ -129,11 +134,18 @@ export async function importInTransaction(ctx: WriteContext, input: ImportItemsI
     if (existing) {
       item = business(existing); revision = String(existing.revision);
       const description = entry.description?.trim() ?? '';
-      if (input.mode !== 'upsert' || item.title === title && (item.description ?? '') === description) {
+      // An omitted deadline keeps the current one; an empty deadline from the source clears it.
+      const dueDate = entry.dueDate === undefined ? item.dueDate : entry.dueDate.trim() || undefined;
+      const promote = entry.workKind === 'change' && item.workKind !== 'change';
+      const reannounce = promote && item.workKind === 'answer';
+      if (input.mode !== 'upsert' || !promote && item.title === title && (item.description ?? '') === description && item.dueDate === dueDate) {
         results.push({ itemId: item.id, deduped: true }); continue;
       }
-      item = { ...item, title, description, sourceAutoUpdatedAt: new Date().toISOString() };
-      revision = await saveItem(ctx, item, item.id); result = { itemId: item.id, updated: true };
+      const { dueDate: _previousDueDate, ...current } = item;
+      item = { ...current, title, description, ...(dueDate ? { dueDate } : {}), ...(promote ? {workKind:'change' as const} : {}), sourceAutoUpdatedAt: new Date().toISOString() };
+      revision = await saveItem(ctx, item, item.id);
+      if (reannounce) await announceChangeSessions(ctx, item, revision);
+      result = { itemId: item.id, updated: true };
     } else {
       const created=await insertItem(ctx,createTodoItem(entry,{id:'',createdAt:new Date().toISOString()}));
       item=created.item;revision=created.revision;result={itemId:item.id};

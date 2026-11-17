@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "c3ad8e82fb36d56b4d8abfc6bd1bc536fd093c26ee1ed9270a54b2fe7ed3ff42",
+  "codeVersion": "868d7fbb0800233f79114bdf5899ba78b4e48a48373626e5e446873a72a92680",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -10,7 +10,6 @@
     "references/types/messages.d.ts",
     "references/types/model.d.ts",
     "references/types/reader.d.ts",
-    "references/types/state.d.ts",
     "references/types/story-tree.d.ts",
     "references/types/view-compact.d.ts",
     "references/types/view-expanded.d.ts",
@@ -19,7 +18,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-story",
-    "description": "从项目原文读取和修改剧情，沿章节、场景和选项定位。"
+    "description": "实时分页阅读与直接编辑游戏剧情原稿、章节分支及关联记录。"
   },
   "typeErrors": []
 }

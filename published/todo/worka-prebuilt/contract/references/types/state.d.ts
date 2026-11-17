@@ -1,4 +1,4 @@
-import type { NoteMutationContext, NoteQueryContext } from '@dsh-workbench/runtime';
+import type { NoteMutationContext, NoteQueryContext } from '@realiz3r/worka-runtime';
 import { note, type TodoItem } from './model';
 export type { TodoData as NoteState } from './model';
 export type ReadContext = NoteQueryContext<typeof note> | NoteMutationContext<typeof note>;
@@ -43,6 +43,15 @@ export declare function getItem(ctx: ReadContext, id: string): Promise<import("@
             jobId: import("zod").ZodOptional<import("zod").ZodString>;
             error: import("zod").ZodOptional<import("zod").ZodString>;
         }, import("zod/v4/core").$strip>>;
+        unblockAction: import("zod").ZodOptional<import("zod").ZodObject<{
+            label: import("zod").ZodString;
+            target: import("zod").ZodObject<{
+                noteId: import("zod").ZodString;
+            }, import("zod/v4/core").$strip>;
+            request: import("zod").ZodString;
+            requestId: import("zod").ZodString;
+        }, import("zod/v4/core").$strip>>;
+        featureId: import("zod").ZodOptional<import("zod").ZodString>;
         sessions: import("zod").ZodOptional<import("zod").ZodArray<import("zod").ZodObject<{
             taskId: import("zod").ZodString;
             sessionId: import("zod").ZodString;
@@ -129,6 +138,7 @@ export declare function getItem(ctx: ReadContext, id: string): Promise<import("@
             queued: "queued";
             started: "started";
         }>>;
+        workKind: import("zod").ZodOptional<import("zod").ZodString>;
         createdAt: import("zod").ZodOptional<import("zod").ZodString>;
         status: import("zod").ZodEnum<{
             blocking: "blocking";
@@ -188,7 +198,16 @@ export declare function insertItem(ctx: WriteContext, value: Omit<TodoItem, 'id'
             jobId?: string | undefined;
             error?: string | undefined;
         } | undefined;
+        unblockAction?: {
+            label: string;
+            target: {
+                noteId: string;
+            };
+            request: string;
+            requestId: string;
+        } | undefined;
         id: string;
+        featureId?: string | undefined;
         sessions?: {
             taskId: string;
             sessionId: string;
@@ -258,6 +277,7 @@ export declare function insertItem(ctx: WriteContext, value: Omit<TodoItem, 'id'
         } | undefined;
         delegatedAt?: string | undefined;
         delegatedRunStatus?: "accepted" | "completed" | "queued" | "started" | undefined;
+        workKind?: string | undefined;
         status?: "blocked" | "blocking" | "done" | "in_progress" | "todo" | undefined;
         createdAt?: string | undefined;
     };

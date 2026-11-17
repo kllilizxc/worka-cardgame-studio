@@ -1,5 +1,5 @@
-import { z } from '@dsh-workbench/runtime';
-export declare const assignmentContext: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+import { z } from '@realiz3r/worka-runtime';
+export declare const assignmentContext: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     title: z.ZodString;
@@ -9,7 +9,7 @@ export declare const assignmentContext: import("@dsh-workbench/runtime").NoteOpe
     sessionId: z.ZodOptional<z.ZodString>;
     taskId: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, "query">;
-export declare const assignPreparedSession: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const assignPreparedSession: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     taskId: z.ZodString;
     sessionId: z.ZodString;
@@ -31,7 +31,7 @@ export declare const assignPreparedSession: import("@dsh-workbench/runtime").Not
     reserved: z.ZodBoolean;
     requestId: z.ZodString;
 }, z.core.$strip>, "mutation">;
-export declare const commitAssignment: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const commitAssignment: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     requestId: z.ZodString;
     jobId: z.ZodString;
@@ -49,12 +49,12 @@ export declare const commitAssignment: import("@dsh-workbench/runtime").NoteOper
     }>;
     jobId: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>, "mutation">;
-export declare const assignmentDispatchUnknown: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const assignmentDispatchUnknown: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
     requestId: z.ZodString;
     error: z.ZodString;
 }, z.core.$strip>, z.ZodNull, "mutation">;
-export declare const assignmentCompleted: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const assignmentCompleted: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     taskId: z.ZodString;
     requestId: z.ZodOptional<z.ZodString>;
     delegationId: z.ZodOptional<z.ZodString>;
@@ -80,7 +80,7 @@ export declare const assignmentCompleted: import("@dsh-workbench/runtime").NoteO
     }, z.core.$strict>;
 }, z.core.$strict>, z.ZodNull, "mutation">;
 /** Native session allocation and durable dispatch are separate effects; reserve the intent before enqueueing. */
-export declare const assignSession: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
+export declare const assignSession: import("@realiz3r/worka-runtime").NoteOperation<z.ZodObject<{
     itemId: z.ZodString;
 }, z.core.$strip>, z.ZodObject<{
     itemId: z.ZodString;

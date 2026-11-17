@@ -2,16 +2,25 @@ import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRequire} from 'node:module';
-import {access,lstat,mkdir,mkdtemp,readFile,readdir,realpath,rename,rm,stat,writeFile} from 'node:fs/promises';
-import {dirname,extname,isAbsolute,join,relative,resolve,sep} from 'node:path';
-import {projectData,referenceCode,referenceNotes} from '../tools/studio.mjs';
-import {boundStoryConfig} from '../tools/story-index.mjs';
+import {watch as watchFs} from 'node:fs';
+import {access,mkdir,mkdtemp,readFile,realpath,rename,rm,stat} from 'node:fs/promises';
+import {dirname,extname,isAbsolute,join,relative,sep} from 'node:path';
+import {buildCatalog,catalogLinks} from '../tools/catalog-index.mjs';
+import {buildStory} from '../tools/story-index.mjs';
+import {search} from '../notes/catalog/search.ts';
+import {homeRecords} from '../notes/catalog/home.ts';
+import {ancestors,storyTree} from '../notes/story/story-tree.ts';
 
 export const name='game-project';
 export const inject=['worka'];
+
+const catalogKinds=['map','encounter','cards','monsters','people','shop','media'];
+const contentKinds=['story',...catalogKinds];
 const digest=value=>createHash('sha256').update(value).digest('hex');
 const run=promisify(execFile);
-const missingMessage='在本桌面对话选择已有 CardGame 的绝对路径，或确认默认仓库 https://github.com/kllilizxc/CardGame。使用 extension.invoke，extension 为 game-project，method 为 bind，input.source 为选定的目录或 HTTPS GitHub 地址。';
+const defaultRepo='https://github.com/kllilizxc/CardGame';
+const missingMessage=`只问用户一个问题来选择 CardGame 游戏来源（默认仓库 ${defaultRepo}，会自动克隆；也可选择本机已检出的 CardGame 目录），然后用 extension.invoke({extension:"game-project",method:"bind",input:{source}}) 绑定。`;
+
 function contained(root,file){
   const part=relative(root,file);
   if(isAbsolute(part)||part==='..'||part.startsWith('..'+sep))throw Error('文件必须位于选定项目内');
@@ -34,7 +43,7 @@ async function checkout(source,dir,signal){
     if(await realpath(await git(['-C',root,'rev-parse','--show-toplevel'],signal))!==root)throw Error('请选择 Git 工作树的根目录');
     return root;
   }
-  const url=regularRemote(source), managed=join(dir,'repos',digest(url));
+  const url=regularRemote(source),managed=join(dir,'repos',digest(url));
   await mkdir(dirname(managed),{recursive:true});
   try{
     await access(managed);
@@ -44,8 +53,6 @@ async function checkout(source,dir,signal){
   const temp=await mkdtemp(join(dirname(managed),'.clone-'));
   try{
     try{
-      // A repository can select locally installed filter programs using .gitattributes.
-      // Materialize the requested tree without hooks, recursive submodules, or these programs.
       await git(['clone','--no-checkout','--no-recurse-submodules','--',url,temp],signal);
       const names=await git(['-C',temp,'config','--name-only','--get-regexp','^filter\\..*\\.(clean|smudge|process|required)$'],signal)
         .catch(error=>{if(error.code===1)return '';throw error;});
@@ -53,99 +60,374 @@ async function checkout(source,dir,signal){
       await git(['-C',temp,...overrides,'-c','submodule.recurse=false','checkout','--force','HEAD','--','.'],signal);
     }catch(error){signal?.throwIfAborted();throw Error(error.killed?'获取游戏仓库超时。':'无法获取游戏仓库，请确认本机 Git 可以访问该地址。');}
     await rename(temp,managed);
-  }
-  finally{await rm(temp,{recursive:true,force:true});}
+  }finally{await rm(temp,{recursive:true,force:true});}
   return await realpath(managed);
 }
-// This provider accepts one connection ID, game-project, per imported desktop.
+
 const recordKey=id=>'cardgame.project/'+digest(id);
-const kindOf=(project,noteId)=>referenceNotes.find(key=>project?.noteIds?.[key]===noteId);
-const sourceOf=(app,id,caller,signal)=>app.dispatch('desktop.source',{desktopId:id},caller,signal);
+async function binding(app,id){return id?(await app.core.readRecord('states',recordKey(id)))?.value:undefined;}
+
 function writable(caller){
-  if(!caller||caller.readOnly||caller.dryRun||caller.replay||caller.skillCause||!['user','agent'].includes(caller.kind))throw Error('需要当前桌面的可写用户对话');
+  if(!caller||caller.readOnly||caller.dryRun||caller.replay||!['user','agent'].includes(caller.kind))throw Error('需要可写调用');
 }
 async function desktopForCommand(app,caller,requested){
   writable(caller);
-  if(caller.noteId||caller.controlNoteId)throw Error('请选择桌面级的游戏项目设置');
   const connection=caller.providerConnection;
-  if(connection&&(caller.kind!=='agent'||!caller.sessionId||connection.provider!==name||connection.connectionId!==name||!connection.desktopId))throw Error('当前对话未绑定此游戏项目连接');
-  if(caller.kind==='user'&&!caller.sessionId){if(typeof requested!=='string'||!requested.trim())throw Error('请选择目标桌面');return requested;}
-  const s=(await app.core.getSession(caller.sessionId))?.value;
-  if(!s?.desktopId||s.noteId||s.skillConnectionId||s.delegationId||s.purpose||s.contextMode==='task'||s.agentObject||s.parentSessionId||caller.noteId||requested&&requested!==s.desktopId)throw Error('请通过当前桌面的原生对话连接项目');
-  if(connection&&connection.desktopId!==s.desktopId)throw Error('游戏项目连接不属于当前桌面');
-  return s.desktopId;
-}
-async function binding(app,id){return (await app.core.readRecord('states',recordKey(id)))?.value;}
-async function links(app,caller,project,items,signal){
-  const id=project.relationIds?.references;
-  if(!id)return; // A partial desktop can omit the optional links relation.
-  const desired=items.filter(l=>project.noteIds[l.source.noteId]&&project.noteIds[l.target.noteId]
-    &&(project.noteIds[l.source.noteId]!==project.noteIds[l.target.noteId]||l.source.recordId!==l.target.recordId))
-    .map(({source,target,label})=>({source:{noteId:project.noteIds[source.noteId],recordId:source.recordId},
-      target:{noteId:project.noteIds[target.noteId],recordId:target.recordId},...(label?{label}:{})}));
-  const rel=await app.dispatch('connection.get',{id},caller,signal);
-  const prior=rel.links;
-  if(prior!==undefined&&JSON.stringify(prior)===JSON.stringify(desired))return async()=>{};
-  await app.dispatch('connection.update',{id,revision:String(rel.revision),change:{links:desired}},caller,signal);
-  return async()=>{
-    const latest=await app.dispatch('connection.get',{id},caller);
-    if(JSON.stringify(latest.links??[])!==JSON.stringify(desired))return;
-    await app.dispatch('connection.update',{id,revision:String(latest.revision),change:{links:prior??[]}},caller);
-  };
-}
-function projectFiles(data,root,adapter){
-  return {...Object.fromEntries(Object.entries(data.catalog).map(([k,v])=>[k,v.initialConfig])),
-    story:boundStoryConfig(data.story.initialConfig),preview:{gameCommit:data.commit,gameRoot:root,adapter,coverAsset:data.catalog.media.initialConfig.records.find(row=>row.source==='public/assets/bg.png')?.id}};
-}
-export function gameProject(host){
-  const app=host.app,pending=new Map();
-  function directory(id){return join(host.dataRoot,'providers',name,digest(id));}
-  // Membership comes from the runtime-resolved connection and the imported instance's note map.
-  async function member(ctx){
-    const {noteId,providerConnection:connection}=ctx.scope;
-    if(!noteId||connection?.provider!==name||connection.connectionId!=='game-project')throw Error('此便笺没有选择游戏项目连接');
+  if(connection&&(connection.provider!==name||connection.connectionId!==name||!connection.desktopId))throw Error('当前对话未绑定此游戏项目连接');
+  let desktopId=connection?.desktopId;
+  const noteId=caller.controlNoteId||caller.noteId;
+  if(noteId){
     const note=(await app.core.getNote(noteId))?.value;
-    if(!note?.desktopId||note.archived)throw Error('游戏便笺已移除');
-    if(connection.desktopId!==note.desktopId)throw Error('游戏项目连接不属于当前桌面');
-    const b=await binding(app,note.desktopId),kind=b&&kindOf(b,noteId);
-    if(b&&!kind)throw Error('便笺不属于已绑定桌面的内容库');
-    return {id:note.desktopId,kind,b};
+    if(!note?.desktopId||note.archived)throw Error('游戏便笺不可用');
+    if(desktopId&&desktopId!==note.desktopId)throw Error('游戏项目连接不属于当前桌面');
+    desktopId=note.desktopId;
   }
-  async function readIndex(id,kind,b){
-    if(!b)return null;
-    try{return JSON.parse(await readFile(join(directory(id),'snapshots',b.snapshot,kind+'.json'),'utf8'));}
-    catch(error){
-      if(error.code!=='ENOENT')throw error;
-      const current=await binding(app,id);
-      if(!current||current.snapshot===b.snapshot)throw error;
-      return readIndex(id,kind,current);
+  if(caller.sessionId){
+    const s=(await app.core.getSession(caller.sessionId))?.value;
+    const sessionDesktop=s?.desktopId||(s?.noteId?(await app.core.getNote(s.noteId))?.value?.desktopId:undefined);
+    if(sessionDesktop){
+      if(desktopId&&desktopId!==sessionDesktop)throw Error('游戏项目连接不属于当前桌面');
+      desktopId=sessionDesktop;
     }
   }
+  if(typeof requested==='string'&&requested.trim()){
+    if(desktopId&&desktopId!==requested.trim())throw Error('请选择当前桌面');
+    desktopId=requested.trim();
+  }
+  if(!desktopId)throw Error('请选择目标桌面');
+  return desktopId;
+}
+
+function ignoredWatchPath(filename){
+  if(!filename)return false;
+  const normalized=String(filename).split(sep).join('/');
+  if(normalized==='node_modules'||normalized.startsWith('node_modules/'))return true;
+  if(normalized==='.git'||normalized.startsWith('.git/')){
+    return !(normalized==='.git/HEAD'||normalized==='.git/packed-refs'||normalized.startsWith('.git/refs/'));
+  }
+  return false;
+}
+
+function excerpt(text='',fallback=''){
+  const line=text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/,'').split(/\r?\n/).find(item=>item.trim()&&!/^[\s#>{[\]-]/.test(item));
+  return (line?.slice(0,150)||fallback.slice(0,140)).trim();
+}
+
+const formats={
+  '.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.avif':'image/avif','.bmp':'image/bmp','.svg':'image/svg+xml',
+  '.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.oga':'audio/ogg','.m4a':'audio/mp4','.aac':'audio/aac','.flac':'audio/flac','.opus':'audio/ogg',
+};
+
+export function gameProject(host){
+  const app=host.app,pending=new Map(),watchers=new Map(),fileCaches=new Map();
+  let closing=false;
+  function directory(id){return join(host.dataRoot,'providers',name,digest(id));}
+
+  function cachesFor(root){
+    let entry=fileCaches.get(root);
+    if(!entry){entry={hashCache:new Map(),gitCache:{}};fileCaches.set(root,entry);}
+    return entry;
+  }
+
+  async function computeProjection(root){
+    const {hashCache,gitCache}=cachesFor(root);
+    const [story,catalog]=await Promise.all([buildStory(root),Promise.resolve().then(()=>buildCatalog(root,{hashCache,gitCache}))]);
+    const catalogByKind=Object.fromEntries(catalogKinds.map(k=>[k,catalog[k].initialConfig.records]));
+    const catalogMap=Object.fromEntries(catalogKinds.map(k=>[k,new Map(catalogByKind[k].map(r=>[r.id,r]))]));
+    const scenes=story.initialConfig.storyIndex;
+    const sceneMap=new Map(scenes.map(s=>[s.id,s]));
+    const tree=storyTree(scenes);
+    const edges=catalogLinks(catalog);
+    const push=(fromKind,fromId,toKind,toId,label)=>{
+      if(fromKind===toKind&&fromId===toId)return;
+      edges.push({source:{noteId:fromKind,recordId:fromId},target:{noteId:toKind,recordId:toId},label:String(label||toId).slice(0,160)});
+    };
+    for(const scene of scenes){
+      for(const ref of scene.refs||[]){
+        const target=catalogMap[ref.note]?.get(ref.id);
+        if(!target)continue;
+        push('story',scene.id,ref.note,ref.id,target.title);
+        push(ref.note,ref.id,'story',scene.id,scene.title);
+      }
+    }
+    const linksBySource=new Map();
+    for(const edge of edges){
+      const key=edge.source.noteId+'\0'+edge.source.recordId;
+      let list=linksBySource.get(key);
+      if(!list){list=new Map();linksBySource.set(key,list);}
+      const targetKey=edge.target.noteId+'\0'+edge.target.recordId;
+      if(!list.has(targetKey))list.set(targetKey,edge);
+    }
+    return {root,catalogByKind,catalogMap,scenes,sceneMap,initialScene:story.initialConfig.initialScene,tree,linksBySource};
+  }
+
+  function watchRoot(root,listener){
+    if(closing)return ()=>{};
+    let state=watchers.get(root);
+    if(!state){
+      state={listeners:new Set(),timer:undefined,fsWatcher:undefined,inflight:null};
+      try{
+        state.fsWatcher=watchFs(root,{recursive:true},(_event,filename)=>{
+          if(ignoredWatchPath(filename))return;
+          clearTimeout(state.timer);
+          state.timer=setTimeout(()=>{
+            state.timer=undefined;
+            for(const fn of [...state.listeners])fn();
+          },25);
+        });
+        state.fsWatcher.on('error',()=>{});
+      }catch{
+        state.fsWatcher=undefined;
+      }
+      watchers.set(root,state);
+    }
+    state.listeners.add(listener);
+    let active=true;
+    return ()=>{
+      if(!active)return;
+      active=false;
+      state.listeners.delete(listener);
+      if(!state.listeners.size){
+        clearTimeout(state.timer);
+        state.fsWatcher?.close();
+        state.inflight=null;
+        watchers.delete(root);
+      }
+    };
+  }
+
+  let sharedInflight=new Map();
+  async function projection(root){
+    let work=sharedInflight.get(root);
+    if(!work){
+      work=computeProjection(root).finally(()=>{if(sharedInflight.get(root)===work)sharedInflight.delete(root);});
+      sharedInflight.set(root,work);
+    }
+    return work;
+  }
+
+  async function desktopNoteMap(desktopId,fallback={}){
+    const map={...fallback};
+    if(typeof app.core.listNotes==='function'){
+      const rows=await app.core.listNotes({desktopId});
+      for(const row of rows){
+        if(row.value.archived)continue;
+        const cfg=(await app.core.readRecord('states',row.key+':config'))?.value;
+        if(cfg?.connections?.game?.provider===name&&cfg.connections.game.connectionId===name){
+          const kind=catalogKinds.includes(cfg.kind)?cfg.kind:'story';
+          map[kind]=row.key;
+        }
+      }
+    }
+    return map;
+  }
+
+  async function allowedTargets(desktopId,noteId,noteIds){
+    if(typeof app.skillConnections?.list!=='function')return new Set(Object.values(noteIds));
+    const relations=await app.skillConnections.list(desktopId);
+    const peers=new Set();
+    for(const rel of relations){
+      if(!rel.enabled||rel.archived||!rel.nodeIds.includes(noteId))continue;
+      for(const peerId of rel.nodeIds)if(peerId!==noteId)peers.add(peerId);
+    }
+    return peers;
+  }
+
+  async function linksFor(desktopId,noteId,kind,recordId,b,data){
+    const noteIds=await desktopNoteMap(desktopId,b?.noteIds);
+    const peers=await allowedTargets(desktopId,noteId,noteIds);
+    const raw=data.linksBySource.get(kind+'\0'+recordId);
+    if(!raw)return [];
+    const result=[];
+    for(const edge of raw.values()){
+      const targetNoteId=noteIds[edge.target.noteId];
+      if(!targetNoteId||(targetNoteId!==noteId&&!peers.has(targetNoteId)))continue;
+      if(targetNoteId===noteId&&edge.target.recordId===recordId)continue;
+      const id='ref_'+digest(JSON.stringify([noteId,recordId,targetNoteId,edge.target.recordId])).slice(0,24);
+      result.push({id,label:edge.label,target:{noteId:targetNoteId,recordId:edge.target.recordId}});
+    }
+    return result;
+  }
+
+  async function member(ctx){
+    const {noteId,providerConnection:connection}=ctx.scope;
+    if(!noteId||connection?.provider!==name||connection.connectionId!==name)throw Error('此便笺没有选择游戏项目连接');
+    const noteRecord=typeof ctx.note==='function'?await ctx.note():undefined;
+    const stored=(await app.core.getNote(noteId))?.value;
+    if(!stored?.desktopId||stored.archived)throw Error('游戏便笺已移除');
+    if(connection.desktopId!==stored.desktopId)throw Error('游戏项目连接不属于当前桌面');
+    const config=noteRecord?.config??(await app.core.readRecord('states',noteId+':config'))?.value??{};
+    const b=await binding(app,stored.desktopId);
+    const mapped=b?.noteIds?contentKinds.find(k=>b.noteIds[k]===noteId):undefined;
+    const kind=catalogKinds.includes(config.kind)?config.kind:mapped||(config.connections?.game?'story':undefined);
+    if(!kind||!contentKinds.includes(kind))throw Error('便笺不属于游戏内容库');
+    return {id:stored.desktopId,noteId,kind,b};
+  }
+
+  function subscribeProject(_input,invalidate,ctx){
+    const noteId=ctx.scope.noteId,desktopId=ctx.scope.providerConnection?.desktopId;
+    if(!noteId||!desktopId||closing)return ()=>{};
+    let disposed=false,stopRoot=()=>{},currentRoot='';
+    const syncWatcher=async()=>{
+      if(disposed||closing)return;
+      const b=await binding(app,desktopId).catch(()=>undefined);
+      const nextRoot=b?.root||'';
+      if(disposed||closing||nextRoot===currentRoot)return;
+      stopRoot();currentRoot=nextRoot;
+      stopRoot=nextRoot?watchRoot(nextRoot,()=>invalidate()):()=>{};
+    };
+    void syncWatcher();
+    const key=recordKey(desktopId);
+    const stopCore=typeof app.core.subscribe==='function'?app.core.subscribe(event=>{
+      if(disposed)return;
+      if(event.changes.some(c=>c.table==='notes'||c.table==='connections'||(c.table==='states'&&c.key===key))){
+        void syncWatcher().then(()=>invalidate());
+      }
+    }):()=>{};
+    return ()=>{disposed=true;stopRoot();stopCore();};
+  }
+
   async function status(_,ctx){
-    const {id,b}=await member(ctx);
-    if(!b)return {configured:false,ready:false,message:missingMessage};
+    const {b}=await member(ctx);
+    if(!b?.root)return {configured:false,ready:false,message:missingMessage};
     try{
       await access(await inside(b.root,'public/data/content-catalog.json'));
-      await access(join(directory(id),'snapshots',b.snapshot,'story.json'));
-      return {ready:true,configured:true,verifiedAt:b.verifiedAt,label:'游戏仓库',commit:b.commit};
-    }catch{return {configured:false,ready:false,message:'无法读取已绑定的游戏目录。'+missingMessage};}
+      await access(await inside(b.root,'knowledge/index.md'));
+      const commit=await git(['-C',b.root,'rev-parse','--verify','HEAD^{commit}'],ctx.signal).catch(()=>b.commit||'');
+      return {ready:true,configured:true,verifiedAt:b.verifiedAt,label:'游戏仓库',root:b.root,...(commit?{commit}:{})};
+    }catch{
+      return {configured:false,ready:false,message:'无法读取已绑定的游戏目录。'+missingMessage};
+    }
   }
-  async function index(_,ctx){const {id,kind,b}=await member(ctx);return readIndex(id,kind,b);}
+
+  async function catalogResource(input,ctx){
+    const {id,noteId,kind,b}=await member(ctx);
+    if(!catalogKinds.includes(kind))throw Error('此便笺不是目录内容库');
+    if(!b?.root)return null;
+    const data=await projection(b.root);
+    const rows=data.catalogByKind[kind]||[];
+    const op=input?.op||'page';
+    if(op==='overview')return {count:rows.length,items:rows.slice(0,3).map(r=>r.title)};
+    if(op==='home'){
+      const home=homeRecords(kind,rows);
+      const records=await Promise.all(home.records.map(async row=>({...row,links:await linksFor(id,noteId,kind,row.id,b,data)})));
+      return {...home,records};
+    }
+    if(op==='record'){
+      const target=typeof input?.id==='string'?data.catalogMap[kind]?.get(input.id):undefined;
+      if(!target)return null;
+      return {...target,links:await linksFor(id,noteId,kind,target.id,b,data)};
+    }
+    if(op==='cursor'){
+      const start=Math.max(0,Number.parseInt(String(input?.cursor||'0'),10)||0);
+      const size=Math.min(50,Math.max(1,Math.trunc(Number(input?.limit)||50)));
+      const slice=rows.slice(start,start+size).map(r=>({id:r.id,title:r.title}));
+      return {items:slice,...(start+size<rows.length?{next:String(start+size)}:{})};
+    }
+    return search(rows,input||{});
+  }
+
+  async function storyResource(input,ctx){
+    const {id,noteId,kind,b}=await member(ctx);
+    if(kind!=='story')throw Error('只有剧情知识库可读取剧情导航');
+    if(!b?.root)return null;
+    const data=await projection(b.root);
+    const op=input?.op||'scenes';
+    const strip=({search:_s,body:_b,refs:_r,...info})=>info;
+    if(op==='home'){
+      const current=data.sceneMap.get(data.initialScene)||data.scenes.find(r=>r.nodeId)||data.scenes[0];
+      if(!current)return {current:null,branches:[]};
+      const branches=current.choices.map(c=>data.sceneMap.get(c.to)||data.scenes.find(r=>r.nodeId===c.to)).filter(Boolean).slice(0,2);
+      const card=s=>({...strip(s),excerpt:excerpt(s.body,s.search.replace(s.title,''))});
+      return {current:card(current),branches:branches.map(card)};
+    }
+    if(op==='scene'){
+      const targetId=typeof input?.id==='string'&&input.id?input.id:data.initialScene;
+      const row=data.sceneMap.get(targetId)||(input?.id?undefined:data.scenes[0]);
+      if(!row)return {scene:null,initialScene:data.initialScene};
+      const trail=ancestors(data.tree.parents.get(row.id)).map(branch=>({key:branch.key,name:branch===data.tree.root?'全书':branch.name}));
+      const choices=row.choices.map(c=>{
+        const target=data.sceneMap.get(c.to);
+        return {label:c.label,to:c.to,...(target?{title:target.title,hasChildren:target.choices.length>0}:{})};
+      });
+      return {
+        initialScene:data.initialScene,
+        scene:{...strip(row),choices,ancestors:trail,links:await linksFor(id,noteId,'story',row.id,b,data)},
+      };
+    }
+    if(op==='tree'){
+      const folderKey=typeof input?.folderKey==='string'&&input.folderKey?input.folderKey:'[]';
+      const branch=data.tree.branches.get(folderKey);
+      if(!branch)return {key:folderKey,name:'全书',ancestors:[],items:[],hasMore:false};
+      const trail=ancestors(branch).map(node=>({key:node.key,name:node===data.tree.root?'全书':node.name}));
+      const all=[
+        ...[...branch.folders.values()].map(child=>({kind:'folder',key:child.key,name:child.name,hasChildren:Boolean(child.folders.size||child.scenes.length)})),
+        ...branch.scenes.map(scene=>({kind:'scene',id:scene.id,title:scene.title,hasChildren:scene.choices.length>0})),
+      ];
+      const start=Math.max(0,Number.parseInt(String(input?.cursor||'0'),10)||0);
+      const size=Math.min(50,Math.max(1,Math.trunc(Number(input?.limit)||40)));
+      const items=all.slice(start,start+size);
+      return {
+        key:branch.key,name:branch===data.tree.root?'全书':branch.name,ancestors:trail,items,
+        total:all.length,hasMore:start+size<all.length,...(start+size<all.length?{next:String(start+size)}:{}),
+      };
+    }
+    const words=String(input?.query??'').normalize('NFKC').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const resolved=words.length?data.scenes.filter(row=>{
+      const text=[row.id,row.title,...row.folders,row.search].join(' ').normalize('NFKC').toLowerCase();
+      return words.every(w=>text.includes(w));
+    }):data.scenes;
+    const start=input?.cursor!==undefined?Math.max(0,Number.parseInt(String(input.cursor),10)||0):Math.max(0,Math.trunc(Number(input?.offset)||0));
+    const limit=Math.min(50,Math.max(1,Math.trunc(Number(input?.limit)||30)));
+    const nextOffset=start+limit;
+    return {
+      total:resolved.length,
+      items:resolved.slice(start,nextOffset).map(strip),
+      ...(nextOffset<resolved.length?{next:String(nextOffset)}:{}),
+    };
+  }
+
+  async function doc(input,ctx){
+    const {b}=await member(ctx);
+    if(!b?.root)return null;
+    if(typeof input?.path!=='string'||!input.path.trim())throw Error('缺少项目文档路径');
+    const rawPath=input.path.replace(/^\/+/,''),file=await inside(b.root,rawPath);
+    const allowed=relative(b.root,file).split(sep).join('/'),format=extname(file).toLowerCase();
+    if(!['.md','.markdown','.mdown','.json'].includes(format))throw Error('不支持的项目文档格式');
+    const content=await readFile(file,'utf8'),rows=content.split(/\r?\n/);
+    const start=Math.max(1,Math.trunc(Number(input.startLine))||1);
+    const count=Math.min(500,Math.max(1,Math.trunc(Number(input.maxLines))||240))*Math.min(100,Math.max(1,Math.trunc(Number(input.pages))||1));
+    return {
+      resourcePath:join(b.root,'knowledge','index.md'),path:allowed,displayPath:allowed,format,
+      content:rows.slice(start-1,start-1+count).join('\n'),revision:digest(content),
+      startLine:start,endLine:Math.min(rows.length,start+count-1),totalLines:rows.length,
+    };
+  }
+
   async function asset(input,ctx){
-    const {id,b}=await member(ctx);
-    if(!b||(typeof input?.key!=='string'&&typeof input?.id!=='string'))return null;
-    const index=await readIndex(id,'media',b);
-    const row=index.records.find(item=>input.key?item.mediaKey===input.key:item.id===input.id);
-    if(!row)return null;
-    const formats={'.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.avif':'image/avif','.bmp':'image/bmp','.mp3':'audio/mpeg','.wav':'audio/wav','.ogg':'audio/ogg','.oga':'audio/ogg','.m4a':'audio/mp4','.aac':'audio/aac','.flac':'audio/flac','.opus':'audio/ogg'};
-    const mime=formats[extname(row.source).toLowerCase()];
+    const {b}=await member(ctx);
+    if(!b?.root||(typeof input?.key!=='string'&&typeof input?.id!=='string'))return null;
+    let sourcePath='';
+    if(typeof input.key==='string'&&input.key){
+      sourcePath=input.key.split('?v=')[0].replace(/^\/+/,'');
+    }else if(typeof input.id==='string'&&input.id){
+      if(input.id.startsWith('asset:'))sourcePath=input.id.slice(6).replace(/^\/+/,'');
+      else{
+        const data=await projection(b.root);
+        sourcePath=data.catalogMap.media?.get(input.id)?.source||'';
+      }
+    }
+    if(!sourcePath)return null;
+    const mime=formats[extname(sourcePath).toLowerCase()];
     if(!mime)return null;
-    const file=await inside(b.root,row.source);
-    if((await stat(file)).size>32*1024*1024)throw Error('素材超过预览大小上限');
+    let file;
+    try{file=await inside(b.root,sourcePath);}catch{return null;}
+    const info=await stat(file).catch(()=>null);
+    if(!info||!info.isFile())return null;
+    if(info.size>32*1024*1024)throw Error('素材超过预览大小上限');
     const bytes=await readFile(file);
-    if(row.mediaKey!==row.source+'?v='+digest(bytes).slice(0,16))throw Error('素材已变化，请刷新游戏索引');
     let preview=bytes,previewMime=mime;
-    if(mime.startsWith('image/')&&bytes.length>256*1024){
+    if(mime.startsWith('image/')&&mime!=='image/svg+xml'&&bytes.length>256*1024){
       const require=createRequire(import.meta.url);
       const sharp=createRequire(require.resolve('@realiz3r/worka/package.json'))('sharp');
       preview=await sharp(bytes,{animated:false}).rotate().resize({width:600,height:600,fit:'inside',withoutEnlargement:true}).webp({quality:65,effort:2}).toBuffer();
@@ -154,87 +436,82 @@ export function gameProject(host){
     if(preview.length>700*1024)return null;
     return 'data:'+previewMime+';base64,'+preview.toString('base64');
   }
-  async function doc(input,ctx){
-    const {id,kind,b}=await member(ctx);
-    if(!b)return null;
-    if(kind!=='story')throw Error('只有剧情便笺可读取项目原文');
-    if(typeof input?.path!=='string'||!input.path)throw Error('缺少剧情文档路径');
-    const path=input.path.replace(/^\/+/,''),file=await inside(b.root,path);
-    const allowed=relative(b.root,file).split(sep).join('/'),format=extname(file).toLowerCase();
-    const inKnowledge=allowed.startsWith('knowledge/')&&['.md','.markdown','.mdown'].includes(format);
-    if(!inKnowledge){
-      if(format!=='.json'||!allowed.startsWith('public/data/'))throw Error('不支持的剧情文档');
-      const story=await readIndex(id,'story',b);
-      if(!story.storyIndex.some(s=>s.path===allowed))throw Error('文件不在已登记的剧情内');
-    }
-    const content=await readFile(file,'utf8'), rows=content.split(/\r?\n/);
-    const start=Math.max(1,Math.trunc(input.startLine)||1),count=Math.min(500,Math.max(1,Math.trunc(input.maxLines)||240))*Math.min(100,Math.max(1,Math.trunc(input.pages)||1));
-    return {resourcePath:join(b.root,'knowledge','index.md'),path:allowed,displayPath:allowed,format,content:rows.slice(start-1,start-1+count).join('\n'),revision:digest(content),startLine:start,endLine:Math.min(rows.length,start+count-1),totalLines:rows.length};
-  }
-  async function prepare(id,source,caller,signal){
-    const prior=await binding(app,id),origin=source??prior?.source;
-    if(typeof origin!=='string'||!origin.trim())throw Error(missingMessage);
-    const dir=directory(id),project=await sourceOf(app,id,caller,signal);
-    if(!project||!referenceNotes.some(k=>project.noteIds?.[k]))throw Error('当前桌面没有游戏项目便笺');
-    const members={};
-    for(const key of referenceNotes){
-      const noteId=project.noteIds[key];
-      if(!noteId)continue;
-      const saved=(await app.core.readRecord('states',noteId+':config'))?.value?.connections?.game;
-      if(saved?.provider===name&&saved.connectionId==='game-project')members[key]=noteId;
-    }
-    if(!Object.keys(members).length)throw Error('此桌面的便笺未选择游戏项目连接');
-    const root=await checkout(origin.trim(),dir,signal);
+
+  async function bind(id,source,caller,signal){
+    const origin=typeof source==='string'&&source.trim()?source.trim():defaultRepo;
+    const dir=directory(id);
+    const root=await checkout(origin,dir,signal);
     for(const path of ['public','public/data','knowledge','public/data/content-catalog.json','knowledge/index.md'])await inside(root,path);
     for(const path of ['public/assets','public/assets/asset-manifest.json','art-references']){
       try{await inside(root,path);}catch(error){if(error.code!=='ENOENT')throw error;}
     }
-    const data=await projectData(root), adapter=project.noteIds.preview?await inside(await realpath(project.directory),'playtest/preview.config.mjs'):'';
-    const files=projectFiles(data,root,adapter),snapshot=digest(JSON.stringify(files)),snapshots=join(dir,'snapshots');
-    await mkdir(snapshots,{recursive:true});
-    const dest=join(snapshots,snapshot);
-    try{await access(dest);}catch(err){
-      if(err.code!=='ENOENT')throw err;
-      const temp=await mkdtemp(join(snapshots,'.stage-'));
-      try{
-        for(const [key,index] of Object.entries(files)){
-          const bytes=JSON.stringify(index);
-          if(Buffer.byteLength(bytes)>5.9*1024*1024)throw Error('便笺 '+key+' 索引超过 5.9 MiB 上限');
-          await writeFile(join(temp,key+'.json'),bytes);
-        }
-        await rename(temp,dest);
-      }finally{await rm(temp,{recursive:true,force:true});}
+    const commit=await git(['-C',root,'rev-parse','--verify','HEAD^{commit}'],signal);
+    const project=typeof app.dispatch==='function'?await app.dispatch('desktop.source',{desktopId:id},caller,signal).catch(()=>null):null;
+    const seeded={};
+    for(const key of contentKinds){
+      const noteId=project?.noteIds?.[key];
+      if(!noteId)continue;
+      const saved=(await app.core.readRecord('states',noteId+':config'))?.value?.connections?.game;
+      if(saved?.provider===name&&saved.connectionId===name)seeded[key]=noteId;
     }
+    const members=await desktopNoteMap(id,seeded);
+    if(!Object.keys(members).length)throw Error('当前桌面没有绑定游戏项目连接的便笺');
+    fileCaches.delete(root);
+    const watched=watchers.get(root);
+    if(watched)watched.dataPromise=null;
     signal?.throwIfAborted();
-    const undo=await links(app,caller,{...project,noteIds:members},data.links,signal);
-    const value={source:origin,root,snapshot,commit:data.commit,verifiedAt:Date.now(),noteIds:members};
-    try{await app.core.writeRecord('states',recordKey(id),value);}
-    catch(error){
-      // A lost receipt may follow a durable publish. Restore the previous links only if the new snapshot wasn't published.
-      if((await binding(app,id))?.snapshot!==snapshot){await undo?.();throw error;}
-    }
-    // A racing reader can finish on the previous generation. Stale readers recover via readIndex.
-    for(const file of await readdir(snapshots)){
-      if(/^[a-f0-9]{64}$/.test(file)&&file!==snapshot&&file!==prior?.snapshot)await rm(join(snapshots,file),{recursive:true,force:true}).catch(()=>{});
-    }
-    return {root,commit:data.commit,scenes:files.story.storyIndex.length,links:data.links.length};
+    await app.core.writeRecord('states',recordKey(id),{source:origin,root,commit,verifiedAt:Date.now(),noteIds:members});
+    return {root,commit};
   }
-  // CoreStore reads register dependency stamps, invalidated by the committed write above.
-  const resource=load=>({access:'owner',version:'1',load,query:{load}});
+
+  const liveResource=load=>({access:'owner',version:'2',load,subscribe:subscribeProject,query:{load,subscribe:subscribeProject}});
+
   return {
-    resources:{status:resource(status),index:resource(index),document:resource(doc),asset:resource(asset)},
+    resources:{
+      status:liveResource(status),
+      catalog:liveResource(catalogResource),
+      story:liveResource(storyResource),
+      document:liveResource(doc),
+      asset:liveResource(asset),
+    },
     initializers:{status:async()=>{}},
+    async noteContext(note){
+      if(!note?.desktopId)return [];
+      const b=await binding(app,note.desktopId);
+      if(!b?.root)return [];
+      let adapter='';
+      if(typeof app.dispatch==='function'){
+        const src=await app.dispatch('desktop.source',{desktopId:note.desktopId},{kind:'user'}).catch(()=>null);
+        if(src?.directory){
+          try{adapter=await inside(await realpath(src.directory),'playtest/preview.config.mjs');}catch{}
+        }
+      }
+      return [`已绑定 CardGame 仓库：${b.root}${adapter?`；试玩适配器：${adapter}`:''}。`];
+    },
     async invoke(method,input,caller,signal){
-      if(method!=='bind'&&method!=='refresh')throw Error('未知游戏项目操作 '+method);
+      if(method!=='bind')throw Error('未知游戏项目操作 '+method);
       const id=await desktopForCommand(app,caller,input?.desktopId);
-      const source=method==='bind'?input?.source:undefined;
-      if(method==='bind'&&(typeof source!=='string'||!source.trim()))throw Error(missingMessage);
+      const source=typeof input?.source==='string'&&input.source.trim()?input.source.trim():defaultRepo;
       const current=pending.get(id);
-      if(current){if(current.source===source)return current.work;throw Error('当前桌面正在准备另一个游戏项目');}
-      const work=prepare(id,source,caller,signal);pending.set(id,{source,work});
+      if(current){if(current.source===source)return current.work;throw Error('当前桌面正在绑定另一个游戏仓库');}
+      const work=bind(id,source,caller,signal);
+      pending.set(id,{source,work});
       try{return await work;}finally{pending.delete(id);}
     },
-    async close(){await Promise.allSettled([...pending.values()].map(v=>v.work));},
+    beginClose(){
+      closing=true;
+      for(const state of watchers.values()){
+        clearTimeout(state.timer);
+        state.fsWatcher?.close();
+        state.dataPromise=null;
+      }
+      watchers.clear();
+    },
+    async close(){
+      this.beginClose();
+      await Promise.allSettled([...pending.values()].map(v=>v.work));
+      fileCaches.clear();
+    },
   };
 }
 export async function apply(ctx){const dispose=await ctx.worka.register(name,gameProject(ctx.worka));ctx.effect(()=>dispose,'CardGame project');}

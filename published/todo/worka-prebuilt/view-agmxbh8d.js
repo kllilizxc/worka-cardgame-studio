@@ -1,0 +1,1 @@
+import{t}from"./entry-bv80kaca.js";import{defineNoteView as e}from"@realiz3r/worka-react";var p=e({compact:()=>(t("m8y1mzmf"),import("./compact-m8y1mzmf.js")),expanded:()=>(t("0whqyx92"),import("./expanded-0whqyx92.js")),compactSurface:"transparent"});export{p as default};

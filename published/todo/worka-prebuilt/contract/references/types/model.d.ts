@@ -1,9 +1,28 @@
-import { z } from '@dsh-workbench/runtime';
+import { z } from '@realiz3r/worka-runtime';
 export declare const todoStatusSchema: z.ZodEnum<{
     blocking: "blocking";
     done: "done";
     in_progress: "in_progress";
     todo: "todo";
+}>;
+export declare const unblockProposalSchema: z.ZodObject<{
+    label: z.ZodString;
+    target: z.ZodObject<{
+        noteId: z.ZodString;
+    }, z.core.$strip>;
+    request: z.ZodString;
+}, z.core.$strip>;
+export declare const unblockActionSchema: z.ZodObject<{
+    label: z.ZodString;
+    target: z.ZodObject<{
+        noteId: z.ZodString;
+    }, z.core.$strip>;
+    request: z.ZodString;
+    requestId: z.ZodString;
+}, z.core.$strip>;
+export declare const todoWorkKindSchema: z.ZodEnum<{
+    answer: "answer";
+    change: "change";
 }>;
 export declare const todoPrioritySchema: z.ZodEnum<{
     high: "high";
@@ -120,7 +139,20 @@ export declare const todoItemSchema: z.ZodObject<{
         jobId: z.ZodOptional<z.ZodString>;
         error: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
+    workKind: z.ZodOptional<z.ZodEnum<{
+        answer: "answer";
+        change: "change";
+    }>>;
+    unblockAction: z.ZodOptional<z.ZodObject<{
+        label: z.ZodString;
+        target: z.ZodObject<{
+            noteId: z.ZodString;
+        }, z.core.$strip>;
+        request: z.ZodString;
+        requestId: z.ZodString;
+    }, z.core.$strip>>;
     id: z.ZodString;
+    featureId: z.ZodOptional<z.ZodString>;
     sessions: z.ZodOptional<z.ZodArray<z.ZodObject<{
         taskId: z.ZodString;
         sessionId: z.ZodString;
@@ -230,7 +262,16 @@ export declare const storedTodoItemSchema: z.ZodObject<{
         jobId: z.ZodOptional<z.ZodString>;
         error: z.ZodOptional<z.ZodString>;
     }, z.core.$strip>>;
+    unblockAction: z.ZodOptional<z.ZodObject<{
+        label: z.ZodString;
+        target: z.ZodObject<{
+            noteId: z.ZodString;
+        }, z.core.$strip>;
+        request: z.ZodString;
+        requestId: z.ZodString;
+    }, z.core.$strip>>;
     id: z.ZodString;
+    featureId: z.ZodOptional<z.ZodString>;
     sessions: z.ZodOptional<z.ZodArray<z.ZodObject<{
         taskId: z.ZodString;
         sessionId: z.ZodString;
@@ -317,6 +358,7 @@ export declare const storedTodoItemSchema: z.ZodObject<{
         queued: "queued";
         started: "started";
     }>>;
+    workKind: z.ZodOptional<z.ZodString>;
     status: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
         blocking: "blocking";
         done: "done";
@@ -341,7 +383,16 @@ export declare const todoDataSchema: z.ZodObject<{
             jobId: z.ZodOptional<z.ZodString>;
             error: z.ZodOptional<z.ZodString>;
         }, z.core.$strip>>;
+        unblockAction: z.ZodOptional<z.ZodObject<{
+            label: z.ZodString;
+            target: z.ZodObject<{
+                noteId: z.ZodString;
+            }, z.core.$strip>;
+            request: z.ZodString;
+            requestId: z.ZodString;
+        }, z.core.$strip>>;
         id: z.ZodString;
+        featureId: z.ZodOptional<z.ZodString>;
         sessions: z.ZodOptional<z.ZodArray<z.ZodObject<{
             taskId: z.ZodString;
             sessionId: z.ZodString;
@@ -428,6 +479,7 @@ export declare const todoDataSchema: z.ZodObject<{
             queued: "queued";
             started: "started";
         }>>;
+        workKind: z.ZodOptional<z.ZodString>;
         status: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
             blocking: "blocking";
             done: "done";
@@ -464,7 +516,16 @@ export declare const todoSnapshotSchema: z.ZodObject<{
                 jobId: z.ZodOptional<z.ZodString>;
                 error: z.ZodOptional<z.ZodString>;
             }, z.core.$strip>>;
+            unblockAction: z.ZodOptional<z.ZodObject<{
+                label: z.ZodString;
+                target: z.ZodObject<{
+                    noteId: z.ZodString;
+                }, z.core.$strip>;
+                request: z.ZodString;
+                requestId: z.ZodString;
+            }, z.core.$strip>>;
             id: z.ZodString;
+            featureId: z.ZodOptional<z.ZodString>;
             sessions: z.ZodOptional<z.ZodArray<z.ZodObject<{
                 taskId: z.ZodString;
                 sessionId: z.ZodString;
@@ -551,6 +612,7 @@ export declare const todoSnapshotSchema: z.ZodObject<{
                 queued: "queued";
                 started: "started";
             }>>;
+            workKind: z.ZodOptional<z.ZodString>;
             status: z.ZodOptional<z.ZodUnion<readonly [z.ZodEnum<{
                 blocking: "blocking";
                 done: "done";
@@ -581,7 +643,6 @@ export declare const revisionOutputSchema: z.ZodObject<{
     revision: z.ZodString;
 }, z.core.$strip>;
 export declare const todoConfigSchema: z.ZodObject<{
-    includeExampleWork: z.ZodOptional<z.ZodBoolean>;
     filter: z.ZodOptional<z.ZodEnum<{
         active: "active";
         all: "all";
@@ -604,7 +665,7 @@ export declare const countsSchema: z.ZodObject<{
     blocking: z.ZodNumber;
     done: z.ZodNumber;
 }, z.core.$strip>;
-export declare const note: import("@dsh-workbench/runtime").NoteModel<{
+export declare const note: import("@realiz3r/worka-runtime").NoteModel<{
     readonly items: {
         readonly schema: z.ZodObject<{
             assignment: z.ZodOptional<z.ZodObject<{
@@ -621,6 +682,15 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{
                 jobId: z.ZodOptional<z.ZodString>;
                 error: z.ZodOptional<z.ZodString>;
             }, z.core.$strip>>;
+            unblockAction: z.ZodOptional<z.ZodObject<{
+                label: z.ZodString;
+                target: z.ZodObject<{
+                    noteId: z.ZodString;
+                }, z.core.$strip>;
+                request: z.ZodString;
+                requestId: z.ZodString;
+            }, z.core.$strip>>;
+            featureId: z.ZodOptional<z.ZodString>;
             sessions: z.ZodOptional<z.ZodArray<z.ZodObject<{
                 taskId: z.ZodString;
                 sessionId: z.ZodString;
@@ -707,6 +777,7 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{
                 queued: "queued";
                 started: "started";
             }>>;
+            workKind: z.ZodOptional<z.ZodString>;
             createdAt: z.ZodOptional<z.ZodString>;
             status: z.ZodEnum<{
                 blocking: "blocking";
@@ -822,7 +893,6 @@ export declare const note: import("@dsh-workbench/runtime").NoteModel<{
         }, z.core.$strip>;
     };
 }, z.ZodObject<{
-    includeExampleWork: z.ZodOptional<z.ZodBoolean>;
     filter: z.ZodOptional<z.ZodEnum<{
         active: "active";
         all: "all";

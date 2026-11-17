@@ -137,13 +137,6 @@ export async function buildStory(gameRoot) {
   const ordered=[...graphs.filter(g=>launched.includes(g.resource.resourceId)&&isMainline(g)),...graphs.filter(isMainline),...graphs];
   const initialId=ordered.map(({graph,resource})=>rows.find(row=>row.storyId===resource.resourceId&&row.nodeId===graph.entryNodeId)?.id).find(Boolean) || rows.find(row=>row.nodeId)?.id || rows[0]?.id;
   return {initialState:{},initialConfig:{
-    resources:[{title:'CardGame',path:join(root,'knowledge/index.md'),root,linkBase:root}],
     storyIndex:rows,initialScene:initialId??''
   }};
-}
-
-/** A connected note reads originals from Worka reference resources; keep only its searchable navigation index. */
-export function boundStoryConfig(config) {
-  if(!config.resources?.length)throw Error('剧情知识库缺少已绑定的项目资料入口。');
-  return {...config,storyIndex:config.storyIndex.map(row=>({...row,body:''}))};
 }

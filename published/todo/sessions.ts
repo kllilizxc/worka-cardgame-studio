@@ -1,10 +1,10 @@
-import {z,pageInput,sha256} from '@dsh-workbench/runtime';
+import {z,pageInput,sha256} from '@realiz3r/worka-runtime';
 import {note,sessionLinkSchema,todoStatusSchema,sourceIconSchema,displaySourceSchema,progressEntrySchema} from './model';
 import {business,getItem,saveItem,type WriteContext} from './state';
 import {resolveTodoSources} from './list';
 import { projectProgressEntries, progressTextIdentity, shortProgressText, type ProgressEntry } from './progress';
 const sourceReference=z.object({noteId:z.string().min(1),itemId:z.string().optional()});
-export const sessionLinked=note.event({name:'items.sessionLinked',visibility:'public',description:'事项关联了原生会话。关联不等于开始执行或业务完成。',payload:z.object({itemId:z.string(),title:z.string(),taskId:z.string(),sessionId:z.string(),revision:z.string()}),objectRef:'/itemId',objectLabel:'/title',revision:'/revision'});
+export const sessionLinked=note.event({name:'items.sessionLinked',visibility:'public',description:'事项关联了原生会话。关联不等于开始执行或业务完成。',payload:z.object({itemId:z.string(),title:z.string(),taskId:z.string(),sessionId:z.string(),revision:z.string(),workKind:z.string().min(1).max(64).optional()}),objectRef:'/itemId',objectLabel:'/title',revision:'/revision'});
 const sessionIdentity=z.object({itemId:z.string().min(1),taskId:z.string().min(1),sessionId:z.string().min(1),title:z.string(),source:sourceReference.optional()});
 export const linkSession=note.mutation({visibility:'public',description:'把已准备的原生会话关联到本事项，保留稳定任务身份和已核实来源；不会发送要求或恢复工作。',input:sessionIdentity,output:z.object({itemId:z.string(),taskId:z.string(),sessionId:z.string(),revision:z.string(),duplicate:z.boolean()}),objectRef:'/itemId',revision:'/revision'},async(ctx,input)=>{
  return saveSessionLink(ctx,input);
@@ -23,7 +23,7 @@ export async function saveSessionLink(ctx:WriteContext,input:z.output<typeof ses
  if(duplicate)return {itemId:row.id,taskId:input.taskId,sessionId:input.sessionId,revision:String(row.revision),duplicate:true};
  const revision=await saveItem(ctx,{...item,sessions,taskSources:sources,...(assignment?{assignment}:{}),...(assigned?{status:'in_progress' as const,completed:false}:{})},row.id);
  await ctx.db.put('sessionIndex',JSON.stringify([input.taskId,row.id]),{taskId:input.taskId,itemId:row.id});
- await sessionLinked.publish(ctx,{itemId:row.id,title:item.title,taskId:input.taskId,sessionId:input.sessionId,revision});
+ await sessionLinked.publish(ctx,{itemId:row.id,title:item.title,taskId:input.taskId,sessionId:input.sessionId,revision,...(item.workKind?{workKind:item.workKind}:{})});
  return {itemId:row.id,taskId:input.taskId,sessionId:input.sessionId,revision,duplicate:false};
 }
 const itemSessionSchema=z.object({itemId:z.string(),title:z.string(),status:todoStatusSchema,sessions:z.array(sessionLinkSchema),archived:z.boolean().optional()});
@@ -57,3 +57,15 @@ export const progressTimeline=note.query({visibility:'private',description:'分�
  return {items:projectProgressEntries(entries).map(entry=>timelineEntrySchema.parse({...entry,summary:shortProgressText(entry.summary)})),revision:`${page.revision}:${row.revision}`,...(page.next?{next:page.next}:{})};
 });
 export const setArchived=note.mutation({visibility:'private',input:z.object({itemId:z.string(),archived:z.boolean()}),output:z.object({revision:z.string()})},async(ctx,{itemId,archived})=>{const row=await getItem(ctx,itemId);return {revision:await saveItem(ctx,{...business(row),archived},itemId)};});
+
+export async function announceChangeSessions(ctx:WriteContext,item:import('./model').TodoItem,revision:string){
+ for(const session of item.sessions??[])await sessionLinked.publish(ctx,{itemId:item.id,title:item.title,taskId:session.taskId,sessionId:session.sessionId,revision,workKind:'change'}, {key:`${item.id}:${revision}:${session.sessionId}:change`});
+}
+/** Expanding an answer into a change must reannounce existing sessions to delivery consumers. */
+export const markChangeWork=note.mutation({visibility:'public',description:'事项范围扩展为实施或交付时标记为 change，并通知交付连线关注已有会话。',input:z.object({itemId:z.string()}),output:z.object({revision:z.string()})},async(ctx,{itemId})=>{
+ const row=await getItem(ctx,itemId),item=business(row);
+ if(item.workKind==='change')return {revision:String(row.revision)};
+ const revision=await saveItem(ctx,{...item,workKind:'change'},itemId);
+ if(item.workKind==='answer')await announceChangeSessions(ctx,item,revision);
+ return {revision};
+});
