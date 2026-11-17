@@ -13,7 +13,10 @@ export default {
       workaCandidate:ctx.key,workaCommit:game.commit,workaProfile:'studio'});
     return {
       surfaces:[{name:'game',title:'游戏',service:'game',path:'/?'+query}],
-      prepare:[{name:'安装游戏依赖',cwd:game.dir,command:['bun','install','--frozen-lockfile'],unless:'node_modules/vite/dist/node/index.js',timeoutMs:300000}],
+      prepare:[
+        {name:'安装游戏依赖',cwd:game.dir,command:['bun','install','--frozen-lockfile'],unless:'node_modules/vite/dist/node/index.js',timeoutMs:300000},
+        {name:'构建游戏',cwd:game.dir,command:['bun','run','build-nolog']},
+      ],
       services:[{name:'game',cwd:game.dir,command:['node',join(folder,'serve.mjs')],env:{PORT:'{{port:game}}',STUDIO_COMMIT:game.commit,
         STUDIO_ENTRY:JSON.stringify(ctx.options.entry||null)},ready:{http:'/__worka_studio',timeoutMs:120000}}],
     };
@@ -29,13 +32,11 @@ export default {
   check(ctx){const entry=gameEntry(ctx.repos.game.dir,ctx.options.entry);return [{name:'试玩起点',ok:true,detail:entry.scene}];},
   async verify(ctx,surface){
     const url=ctx.urls[surface],game=ctx.repos.game,expected=gameEntry(game.dir,ctx.options.entry);
-    const paths=['/__worka_studio','/','/src/main.tsx','/src/GameApp.tsx','/src/game/scenes/Preloader.ts','/data/content-catalog.json'];
-    const responses=await Promise.all(paths.map(p=>fetch(new URL(p,url))));
-    if(responses.some(r=>!r.ok))return [{name:'游戏入口与模块',ok:false,detail:responses.map(r=>r.status).join(', ')}];
-    const [identity,html,entry,app,preloader,catalog]=await Promise.all([responses[0].json(),...responses.slice(1,5).map(r=>r.text()),responses[5].json()]);
+    const [identityResponse,catalogResponse]=await Promise.all(['/__worka_studio','/data/content-catalog.json'].map(path=>fetch(new URL(path,url))));
+    if(!identityResponse.ok||!catalogResponse.ok)return [{name:'游戏入口与内容',ok:false,detail:`HTTP ${identityResponse.status}, ${catalogResponse.status}`}];
+    const [identity,catalog]=await Promise.all([identityResponse.json(),catalogResponse.json()]);
     return [
       {name:'运行版本及场景',ok:identity.commit===game.commit&&identity.scene===expected.scene,detail:identity.scene+' · '+identity.commit},
-      {name:'React / Phaser 游戏入口',ok:html.includes('src/main.tsx')&&entry.includes('GameApp')&&app.includes('StartGame')&&preloader.includes(expected.scene)},
       {name:'游戏内容目录',ok:Array.isArray(catalog.resources)&&catalog.resources.some(r=>r.kind==='encounter')&&catalog.resources.some(r=>r.kind==='story')},
     ];
   },
