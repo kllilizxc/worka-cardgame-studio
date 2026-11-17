@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {testSubprocess} from './subprocess-fixture.mjs';
 import {gameProject} from '../provider/index.mjs';
 
 const reference={provider:'game-project',connectionId:'game-project'};
@@ -39,7 +40,9 @@ async function createFixture(dir){
     }
   }
   const emit=(table,key)=>{for(const fn of [...coreListeners])fn({changes:[{table,key}]});};
+  await mkdir(join(dir,'worka-data'),{recursive:true});
   const host={
+    runtime:{subprocess:testSubprocess},
     dataRoot:join(dir,'worka-data'),
     app:{
       core:{
@@ -307,3 +310,4 @@ test('rebinding a desktop closes the old root watcher only after its last deskto
     await rm(root,{recursive:true,force:true});
   }
 });
+

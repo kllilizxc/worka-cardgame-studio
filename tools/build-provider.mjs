@@ -9,10 +9,11 @@ const stage=await mkdtemp(join(tmpdir(),'cardgame-project-build-'));
 try {
  for(const file of ['package.json','cordis.patch.yml'])await copyFile(join(root,'provider',file),join(stage,file));
  await copyFile(join(root,'LICENSE'),join(stage,'LICENSE'));
- const built=await Bun.build({entrypoints:[join(root,'provider/index.mjs')],outdir:stage,naming:'index.mjs',target:'node',minify:{whitespace:false,syntax:false,identifiers:false}});
+ const built=await Bun.build({entrypoints:[join(root,'provider/index.mjs'),join(root,'provider/project-worker.mjs')],outdir:stage,naming:'[name].mjs',target:'node',minify:{whitespace:false,syntax:false,identifiers:false}});
  if(!built.success)throw Error(built.logs.map(String).join('\n'));
  const out=join(root,'published','game-project');
  await rm(out,{force:true,recursive:true});await mkdir(out,{recursive:true});
  await prepareDesktopExtension(stage,out,{entry:'index.mjs',capabilities:['game-project']});
  console.log('game-project '+(await readDesktopExtension(out)).integrity);
 } finally {await rm(stage,{force:true,recursive:true});}
+
