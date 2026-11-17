@@ -68,6 +68,7 @@ function excerpt(text='',fallback=''){
 export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}){
   const project=createProjectProcess(host,processOptions),watch=watchOverride??project.watch;
   const app=host.app,pending=new Map(),roots=new Map(),desktopRoots=new Map();
+  const stopping=new AbortController();
   let closing=false;
   function directory(id){return join(host.dataRoot,'providers',name,digest(id));}
   async function readDesktopBinding(id){
@@ -242,7 +243,13 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
 
   async function status(_,ctx){
     const {b}=await member(ctx);
-    if(!b?.root)return {configured:false,ready:false,message:missingMessage};
+    if(b?.job){
+      const status=(await app.core.getExecution(b.job.id))?.value?.status;
+      if(!status||['accepted','running','cancel-requested'].includes(status))
+        return {configured:false,ready:false,executionId:b.job.id,message:b.job.message};
+      if(!b.root)return {configured:false,ready:false,message:'获取游戏仓库中断了，可以重新选择游戏来源。'};
+    }
+    if(!b?.root)return {configured:false,ready:false,message:b?.message??missingMessage};
     try{
       const commit=await project.request('status',[b.root,b.commit],ctx.signal);
       return {ready:true,configured:true,verifiedAt:b.verifiedAt,label:'游戏仓库',root:b.root,...(commit?{commit}:{})};
@@ -378,19 +385,26 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
     return false;
   }
 
-  async function bind(id,source,caller,signal){
+  async function bind(id,origin,signal,executionId){
     const prior=await readDesktopBinding(id);
-    const origin=typeof source==='string'&&source.trim()?source.trim():defaultRepo;
     const dir=directory(id);
-    const root=await project.request('checkout',[origin,dir],signal,180000);
-    const commit=await project.request('validate',[root],signal);
-    const members=await desktopNoteMap(id);
-    if(!Object.keys(members).length)throw Error('当前桌面没有绑定游戏项目连接的便笺');
+    const message=origin.startsWith('https:')?'正在克隆游戏仓库…':'正在检查游戏目录…';
+    await app.core.writeRecord('states',recordKey(id),{...prior,job:{id:executionId,message}});
+    let root,commit;
+    try{
+      root=await project.request('checkout',[origin,dir],signal);
+      commit=await project.request('validate',[root],signal);
+      signal.throwIfAborted();
+    }catch(error){
+      const {job:_job,...previous}=prior??{};
+      const message=signal.aborted?'已取消获取游戏仓库。':error.message;
+      await app.core.writeRecord('states',recordKey(id),{...previous,message});
+      throw error;
+    }
     const existing=roots.get(root);
     if(existing){existing.epoch++;existing.cached=null;}
-    signal?.throwIfAborted();
+    await app.core.writeRecord('states',recordKey(id),{source:origin,root,commit,executionId,verifiedAt:Date.now()});
     desktopRoots.set(id,root);
-    await app.core.writeRecord('states',recordKey(id),{source:origin,root,commit,verifiedAt:Date.now()});
     if(prior?.root&&prior.root!==root&&!await rootUsedElsewhere(prior.root,id)){
       closeRoot(prior.root);
     }
@@ -420,25 +434,39 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
       }
       return [`已绑定 CardGame 仓库：${b.root}${adapter?`；试玩适配器：${adapter}`:''}。`];
     },
-    async invoke(method,input,caller,signal){
-      if(method!=='bind')throw Error('未知游戏项目操作 '+method);
-      const id=await desktopForCommand(app,caller,input?.desktopId);
-      const source=typeof input?.source==='string'&&input.source.trim()?input.source.trim():defaultRepo;
-      const current=pending.get(id);
-      if(current){if(current.source===source)return current.work;throw Error('当前桌面正在绑定另一个游戏仓库');}
-      const work=bind(id,source,caller,signal);
-      pending.set(id,{source,work});
-      try{return await work;}finally{pending.delete(id);}
-    },
+    commands:{bind:{
+      idempotent:true,
+      async run(input,context){
+        const {caller,noteId,executionId}=context;
+        const id=await desktopForCommand(app,caller,input?.desktopId??(noteId&&(await app.core.getNote(noteId))?.value?.desktopId));
+        const members=await desktopNoteMap(id);
+        if(!Object.values(members).includes(noteId))throw Error('请选择当前桌面的游戏内容便笺');
+        const source=typeof input?.source==='string'&&input.source.trim()?input.source.trim():defaultRepo;
+        const current=pending.get(id);
+        if(current){if(current.source===source)return current.work;throw Error('当前桌面正在绑定另一个游戏仓库');}
+        const signal=AbortSignal.any([context.signal,stopping.signal]);
+        signal.throwIfAborted();
+        const work=bind(id,source,signal,executionId);
+        pending.set(id,{source,work});
+        try{return await work;}finally{pending.delete(id);}
+      },
+      async reconcile(_input,{noteId,executionId}){
+        const note=noteId&&(await app.core.getNote(noteId))?.value;
+        const saved=note?.desktopId&&await binding(app,note.desktopId);
+        if(saved?.executionId===executionId)return {status:'completed',result:{root:saved.root,commit:saved.commit}};
+        return {status:'failed',error:'获取游戏仓库中断了，可以重新选择游戏来源。'};
+      },
+    }},
+    async invoke(method){throw Error('未知游戏项目操作 '+method);},
     beginClose(){
       closing=true;
-      for(const root of [...roots.keys()])closeRoot(root);
-      desktopRoots.clear();
-      return project.close();
+      stopping.abort(Error('Game project is closing'));
     },
     async close(){
-      await this.beginClose();
+      this.beginClose();
       await Promise.allSettled([...pending.values()].map(v=>v.work));
+      for(const root of [...roots.keys()])closeRoot(root);
+      desktopRoots.clear();
       await project.close();
     },
   };

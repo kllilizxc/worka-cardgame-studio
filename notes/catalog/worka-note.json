@@ -38,14 +38,14 @@
     "title": "选择要绑定的卡牌游戏仓库",
     "description": "本桌面的所有内容便笺共用同一份游戏检出，实时读取并在各自范围内直接编辑。",
     "steps": [
-      "只问用户一个问题来确认游戏来源：默认使用 https://github.com/kllilizxc/CardGame（自动克隆），或选择本机已检出的 CardGame 目录；然后调用 extension.invoke({extension:\"game-project\",method:\"bind\",input:{source}})。"
+      "直接问：「要从 GitHub 下载 CardGame，还是使用你电脑上已有的游戏目录？」默认来源是 https://github.com/kllilizxc/CardGame。收到回答后，用 extension.invoke 调用 game-project 的 bind，input 包含 source 和当前设置资料中的 noteId。收到受理回执后告诉用户正在克隆或检查其目录，便笺会在完成后自动打开内容。"
     ],
     "locales": {
       "en": {
         "title": "Choose the card game repository",
         "description": "All content notes on this desktop read live from and edit their own part of the bound checkout.",
         "steps": [
-          "Ask one question to choose the game source (default https://github.com/kllilizxc/CardGame, cloned automatically, or a local CardGame directory), then call extension.invoke({extension:\"game-project\",method:\"bind\",input:{source}})."
+          "Ask directly whether to download CardGame from GitHub or use an existing local folder. The default is https://github.com/kllilizxc/CardGame. After the answer, call game-project bind via extension.invoke with source and the setup noteId. Once admitted, tell the user the repository is cloning or the folder is being checked. The notes load automatically when it finishes."
         ]
       }
     }
