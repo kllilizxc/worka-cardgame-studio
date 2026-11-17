@@ -25,11 +25,12 @@ test('a note links to the precise game resource or fails explicitly',t=>{
   assert.throws(()=>gameEntry(root,{kind:'map',resourceId:'e'}),/没有这个试玩资源/);
 });
 
-test('the served frame namespaces save data by the full game commit and candidate',()=>{
+test('the served frame namespaces save data by the full game commit and candidate while keeping surface path compact',()=>{
   const commit='d'.repeat(40);
   const ctx={key:'case-1',repos:{game:{repo:'/game',dir:'/worktree',commit}},options:{}};
   const {services,surfaces}=project.plan(ctx);
-  const query=new URL(surfaces[0].path,'http://preview').searchParams;
+  assert.equal(surfaces[0].path,'/');
+  const query=new URLSearchParams(services[0].env.STUDIO_QUERY);
   for(const key of ['workaProject','workaCandidate','workaCommit','workaProfile'])assert.ok(query.get(key));
   assert.equal(query.get('workaCommit'),commit);assert.equal(query.get('workaCandidate'),'case-1');
   assert.equal(services[0].cwd,'/worktree');assert.equal(services[0].env.STUDIO_COMMIT,commit);
