@@ -134,7 +134,12 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
             for(const fn of [...entry.listeners])fn();
           },25);
         });
-        entry.fsWatcher.on('error',()=>{entry.epoch++;entry.cached=null;entry.fsWatcher?.close();entry.fsWatcher=undefined;});
+        entry.fsWatcher.on('error',error=>{
+          entry.epoch++;entry.cached=null;
+          clearTimeout(entry.timer);entry.timer=undefined;
+          entry.fsWatcher?.close();entry.fsWatcher=undefined;
+          for(const fn of [...entry.listeners])fn(error);
+        });
       }catch{
         entry.fsWatcher=undefined;
       }
@@ -223,7 +228,7 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
       if(nextRoot&&desktopRoots.get(desktopId)!==nextRoot)return;
       stopRoot();currentRoot=nextRoot;
       if(nextRoot){
-        const entry=ensureRoot(nextRoot),fn=()=>invalidate();
+        const entry=ensureRoot(nextRoot),fn=error=>invalidate(error);
         entry.listeners.add(fn);
         stopRoot=()=>{entry.listeners.delete(fn);};
       }else{

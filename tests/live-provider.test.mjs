@@ -2,6 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,readFile,readdir,realpath,writeFile,rm,symlink} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
+import {EventEmitter} from 'node:events';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -273,6 +274,39 @@ test('N reads share one cached projection until a file change triggers exactly o
   }finally{
     await rm(root,{recursive:true,force:true});
   }
+});
+
+test('a failed project watcher notifies live queries so they can reattach and refresh',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'live-project-watch-recovery-'));
+  try{
+    const f=await createFixture(root),watchers=[];
+    const provider=gameProject(f.host,{watch(_root,_options,listener){
+      const watcher=new EventEmitter();
+      watcher.close=()=>watcher.removeAllListeners();
+      watcher.on('change',listener);watchers.push(watcher);
+      return watcher;
+    }});
+    const query=provider.resources.story.query,input={op:'scene',id:'forest_gate'},scope=ctx('one-story');
+    const events=[];
+    try{
+      await runBind(provider,{desktopId:'one',source:f.game},{kind:'user'});
+      let stop=query.subscribe(input,error=>events.push(error),scope);
+      await until(()=>watchers.length===1,'expected initial watcher');
+      assert.equal((await query.load(input,scope)).scene.title,'雾林山门');
+      const failure=Error('watch disconnected');
+      watchers[0].emit('error',failure);
+      assert.deepEqual(events,[failure]);
+      await writeFile(join(f.game,'knowledge/index.md'),'---\nscene: true\nnodeId: forest_gate\ntitle: 雾林新山门\n---\n# 雾林新山门\n');
+      stop();
+      stop=query.subscribe(input,error=>events.push(error),scope);
+      await until(()=>watchers.length===2,'expected replacement watcher');
+      assert.equal((await query.load(input,scope)).scene.title,'雾林新山门');
+      watchers[1].emit('change','change','knowledge/index.md');
+      await until(()=>events.length===2,'expected live invalidation from replacement watcher');
+      assert.equal(events[1],undefined);
+      stop();
+    }finally{await provider.close();}
+  }finally{await rm(root,{recursive:true,force:true});}
 });
 
 test('rebinding a desktop closes the old root watcher only after its last desktop leaves',async()=>{

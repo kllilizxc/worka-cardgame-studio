@@ -500,11 +500,15 @@ function gameProject(host, { onBuild, watch: watchOverride, processOptions } = {
               fn();
           }, 25);
         });
-        entry.fsWatcher.on("error", () => {
+        entry.fsWatcher.on("error", (error) => {
           entry.epoch++;
           entry.cached = null;
+          clearTimeout(entry.timer);
+          entry.timer = undefined;
           entry.fsWatcher?.close();
           entry.fsWatcher = undefined;
+          for (const fn of [...entry.listeners])
+            fn(error);
         });
       } catch {
         entry.fsWatcher = undefined;
@@ -614,7 +618,7 @@ function gameProject(host, { onBuild, watch: watchOverride, processOptions } = {
       stopRoot();
       currentRoot = nextRoot;
       if (nextRoot) {
-        const entry = ensureRoot(nextRoot), fn = () => invalidate();
+        const entry = ensureRoot(nextRoot), fn = (error) => invalidate(error);
         entry.listeners.add(fn);
         stopRoot = () => {
           entry.listeners.delete(fn);
