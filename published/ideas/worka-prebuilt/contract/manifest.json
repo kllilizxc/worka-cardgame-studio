@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "069fb2dfcee8fd6adcf38ad5e78b22a47ea57c538608e269f02baad788673958",
+  "codeVersion": "86eee16d5df7c706167568c380327409dfe3683561bb2333c9d94628d7c15acd",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -14,7 +14,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-ideas",
-    "description": "原样保存游戏点子。用户要求交付游戏改动时，交给制作待办。"
+    "description": "原样保存随口的游戏感想和未要求实施的点子；明确要求交付改动才开工。"
   },
   "typeErrors": []
 }
