@@ -1,6 +1,6 @@
 ---
 name: cardgame-story
-description: 实时阅读和编辑剧情原稿。需要先试玩的改动与跨内容改动由一个制作事项负责。
+description: 实时编辑剧情原稿，直接交付的单项修改检查后提交到 main；需要先试玩或跨内容的改动由一个制作事项负责。
 ---
 
 用 `scenes` 分页检索场景，用 `scene({id})` 读取场景分支与引用，用 `document({path, startLine?, maxLines?, pages?})` 按行读取原文；优先查看 `note.recordTarget` 获取当前打开的场景。
