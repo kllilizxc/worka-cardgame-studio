@@ -8,7 +8,7 @@ import {setTimeout as sleep} from 'node:timers/promises';
 import {gameProject} from '../provider/index.mjs';
 import {testSubprocess} from './subprocess-fixture.mjs';
 
-test('four hung project realpaths cannot starve host file I/O; timeout reaps child and next read recovers',async()=>{
+test('four hung project realpaths cannot starve host file I/O; cancellation reaps child and next read recovers',async()=>{
   const root=await realpath(await mkdtemp(join(tmpdir(),'project-isolation-')));
   let provider;
   try{
@@ -31,16 +31,19 @@ test('four hung project realpaths cannot starve host file I/O; timeout reaps chi
     provider=gameProject({dataRoot,runtime:{subprocess},app:{core:{
       getNote:async()=>({value:{desktopId}}),
       readRecord:async(_table,key)=>({value:key.endsWith(':config')?{kind:'media'}:{root}}),
-    }}},{processOptions:{timeoutMs:1500}});
-    const ctx={scope:{noteId,providerConnection:{provider:'game-project',connectionId:'game-project',desktopId}}};
+    }}});
+    const cancelled=new AbortController();
+    const ctx={signal:cancelled.signal,scope:{noteId,providerConnection:{provider:'game-project',connectionId:'game-project',desktopId}}};
     const calls=Array.from({length:4},()=>provider.resources.asset.load({key:'blocked.png'},ctx));
     const outcomes=Promise.allSettled(calls);
     const start=Date.now();while(blocked<4&&Date.now()-start<1200)await sleep(10);
     assert.equal(blocked,4,'all four filesystem requests entered isolated worker');
     const readStart=Date.now();assert.equal(await readFile(local,'utf8'),'host stays responsive');
     assert(Date.now()-readStart<500,'host local I/O does not wait for the blocked project pool');
-    for(const result of await outcomes){assert.equal(result.status,'rejected');assert.match(result.reason.message,/timed out/);}
-    assert.equal(await provider.resources.asset.load({key:'blocked.png'},ctx),'data:image/png;base64,'+Buffer.from('test image').toString('base64'));
+    const reason=Error('Cancelled blocked project reads');
+    cancelled.abort(reason);
+    for(const result of await outcomes){assert.equal(result.status,'rejected');assert.equal(result.reason,reason);}
+    assert.equal(await provider.resources.asset.load({key:'blocked.png'},{scope:ctx.scope}),'data:image/png;base64,'+Buffer.from('test image').toString('base64'));
     assert.equal(spawned,2,'only a later request starts a replacement, no retry');
     await provider.close();assert.equal(alive,0,'all process generations exited');
   }finally{await provider?.close();await rm(root,{recursive:true,force:true});}

@@ -6,8 +6,8 @@ const workerFile = fileURLToPath(new URL('./project-worker.mjs', import.meta.url
 const errorFrom = value => Object.assign(new Error(value?.message ?? 'Project process failed'), value?.code ? { code: value.code } : {});
 
 /** One managed process owns external project I/O. No request is replayed. */
-export function createProjectProcess(host, { timeoutMs = 10_000, maxPending = 16, maxFrameBytes = 32 * 1024 * 1024, entry = workerFile } = {}) {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isInteger(maxPending) || maxPending < 1 || !Number.isInteger(maxFrameBytes) || maxFrameBytes < 1) throw new TypeError('Invalid project process limits');
+export function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024 * 1024, entry = workerFile } = {}) {
+  if (!Number.isInteger(maxPending) || maxPending < 1 || !Number.isInteger(maxFrameBytes) || maxFrameBytes < 1) throw new TypeError('Invalid project process limits');
   let current, retired = Promise.resolve(), closed = false, sequence = 0;
   const pending = new Map(), watches = new Map();
   const subscribe = (stream, callback, onError) => {
@@ -20,7 +20,7 @@ export function createProjectProcess(host, { timeoutMs = 10_000, maxPending = 16
   function finish(id, error, value) {
     const call = pending.get(id);
     if (!call) return;
-    pending.delete(id); clearTimeout(call.timer); call.signal?.removeEventListener('abort', call.abort);
+    pending.delete(id); call.signal?.removeEventListener('abort', call.abort);
     error !== undefined ? call.reject(error) : call.resolve(value);
   }
   function reportWatch(watch, error) {
@@ -104,8 +104,7 @@ export function createProjectProcess(host, { timeoutMs = 10_000, maxPending = 16
         void generation.process.stdin.write(JSON.stringify({ cancel: id }) + '\n')
           .catch(error => fail(generation, error));
       };
-      const timer = checkout ? undefined : setTimeout(() => fail(generation, Error('Project request timed out')), timeoutMs);
-      pending.set(id, { generation, resolve, reject, timer, signal, abort });
+      pending.set(id, { generation, resolve, reject, signal, abort });
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
       void generation.start.then(async process => {
