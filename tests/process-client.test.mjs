@@ -10,7 +10,7 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check) { const end = Date.now() + 3000; while (!check()) { if (Date.now() > end) throw Error('Expected event did not arrive'); await delay(10); } }
 const fixture = `import {createInterface} from 'node:readline';
 createInterface({input:process.stdin}).on('line',line=>{const m=JSON.parse(line);const send=v=>process.stdout.write(JSON.stringify(v)+'\\n');
-if(m.method==='hang')return;if(m.method==='exit')process.exit(0);if(m.method==='bad')return process.stdout.write('not-json\\n');
+if(m.method==='hang')return;if(m.method==='slow')return setTimeout(()=>send({id:m.id,result:m.args.slice(1)}),m.args[0]);if(m.method==='exit')process.exit(0);if(m.method==='bad')return process.stdout.write('not-json\\n');
 if(m.method==='large')return process.stdout.write('x'.repeat(4096));
 if(m.method==='watch'){send({id:m.id,result:true});setTimeout(()=>send({watch:m.args[0],event:'change',filename:'asset.png'}),30);return;}
 if(m.method==='fail'){send({id:m.id,error:{message:'missing',code:'ENOENT'}});return;}
@@ -26,7 +26,7 @@ async function setup(t, options = {}, spawnDelay = 0, killDelay = 0) {
     const done = new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',(code,signal)=>{alive--;resolve({code,signal});});});
     return {stdin:{write: data=>new Promise((resolve,reject)=>child.stdin.write(data,error=>error?reject(error):resolve()))},stdout:child.stdout,stderr:child.stderr,wait:()=>done,kill:async()=>{if(killDelay)await delay(killDelay);child.kill('SIGKILL');await done;}};
   } } } };
-  const client = createProjectProcess(host, {entry,timeoutMs:1000,...options});
+  const client = createProjectProcess(host, {entry,...options});
   t.after(async()=>{await client.close();await rm(root,{recursive:true,force:true});});
   return {client,root,children,get maxAlive(){return maxAlive;}};
 }
@@ -37,15 +37,16 @@ test('lazy start, shared process, error codes and close', async t=>{
  assert.deepEqual(await s.client.request('echo',[2]),[2]); assert.equal(s.children.length,1);
  await s.client.close(); await assert.rejects(s.client.request('echo',[]),/closed/);
 });
-test('hang expires, rejects all calls, recovers without overlapping children',async t=>{
- const s=await setup(t,{timeoutMs:150});
- const a=s.client.request('hang',[]), b=s.client.request('hang',[]);
- await Promise.all([assert.rejects(a,/timed out/),assert.rejects(b,/timed out/)]);
+test('cancelling a non-checkout request retires its process without overlapping children',async t=>{
+ const s=await setup(t);const controller=new AbortController();
+ const a=s.client.request('hang',[],controller.signal), b=s.client.request('hang',[]);
+ const rejected=Promise.all([assert.rejects(a,/cancelled/),assert.rejects(b,/cancelled/)]);
+ controller.abort(Error('cancelled'));await rejected;
  assert.deepEqual(await s.client.request('echo',[3]),[3]); assert.equal(s.maxAlive,1);
 });
 test('pending admission rejects overflow without killing accepted call',async t=>{
- const s=await setup(t,{maxPending:1,timeoutMs:150});const pending=s.client.request('hang',[]);
- await assert.rejects(s.client.request('echo',[]),/busy/); await assert.rejects(pending,/timed out/);
+ const s=await setup(t,{maxPending:1});const pending=s.client.request('slow',[50,'accepted']);
+ await assert.rejects(s.client.request('echo',[]),/busy/); assert.deepEqual(await pending,['accepted']);
 });
 test('cancellation during delayed spawn cleans late child before replacement',async t=>{
  const s=await setup(t,{},60);const controller=new AbortController();
@@ -64,18 +65,18 @@ test('watch events, error on process failure, close does not restart child',asyn
  await delay(30);assert.equal(s.children.length,1);
 });
 test('external hung operation does not delay host local file reads',async t=>{
- const s=await setup(t,{timeoutMs:200});const pending=s.client.request('hang',[]);const rejection=assert.rejects(pending,/timed out/);
+ const s=await setup(t);const pending=s.client.request('slow',[200,'finished']);
  await delay(40);const start=performance.now();await readFile(join(s.root,'worker.mjs'));assert.ok(performance.now()-start<100);
- await rejection;
+ assert.deepEqual(await pending,['finished']);
 });
 test('missing managed runtime rejects without fallback or leaked rejection',async()=>{
  const client=createProjectProcess({});await assert.rejects(client.request('echo',[]),/unavailable/);await client.close();
 });
 
 test('watch error reentry waits for prior process termination',async t=>{
- const s=await setup(t,{timeoutMs:250},0,70); let recovery;
+ const s=await setup(t,{},0,70); let recovery;
  s.client.watch('/external',{},()=>{}).on('error',()=>{recovery=s.client.request('echo',['recovered']);});
- await delay(50);await assert.rejects(s.client.request('hang',[]),/timed out/);
+ await delay(50);await assert.rejects(s.client.request('exit',[]),/exited/);
  assert.deepEqual(await recovery,['recovered']);assert.equal(s.maxAlive,1);
 });
 test('close during spawn awaits the late process and leaves none alive',async t=>{
@@ -84,8 +85,10 @@ test('close during spawn awaits the late process and leaves none alive',async t=
 });
 test('failed cleanup remains a restart barrier',async()=>{
  let count=0;const stream={onData(){return ()=>{};}};
- const client=createProjectProcess({dataRoot:tmpdir(),runtime:{subprocess:{async spawn(){count++;return {stdin:{write(){}},stdout:stream,wait:()=>new Promise(()=>{}),kill:async()=>{throw Error('kill failed');}};}}}},{timeoutMs:20});
- await assert.rejects(client.request('hang',[]),/timed out/);
+ const client=createProjectProcess({dataRoot:tmpdir(),runtime:{subprocess:{async spawn(){count++;return {stdin:{write(){}},stdout:stream,wait:()=>new Promise(()=>{}),kill:async()=>{throw Error('kill failed');}};}}}});
+ const controller=new AbortController();
+ const pending=assert.rejects(client.request('hang',[],controller.signal),/cancelled/);
+ await until(()=>count===1);controller.abort(Error('cancelled'));await pending;
  await assert.rejects(client.request('echo',[]),/kill failed/);
  await assert.rejects(client.request('echo',[]),/kill failed/);
  await assert.rejects(client.close(),/kill failed/);assert.equal(count,1);
