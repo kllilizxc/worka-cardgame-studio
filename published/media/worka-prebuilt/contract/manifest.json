@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "72e012832be8693db2d10971b74ab89215a6d15d8680893c8c1f194390517b80",
+  "codeVersion": "ef2d19e469c190ecb1f0c40eef625a23eeca40233714ce02be376e8a2ed36f46",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -17,7 +17,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-catalog",
-    "description": "实时分页浏览秘境、战斗、卡牌、怪物、人物、商店与素材，并在本便笺范围内直接编辑游戏源文件并提交到 main。"
+    "description": "实时编辑游戏内容，直接交付的单项修改检查后提交到 main；需要先试玩或跨内容的改动由一个制作事项负责。"
   },
   "typeErrors": []
 }
