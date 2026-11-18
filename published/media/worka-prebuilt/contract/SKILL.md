@@ -1,6 +1,6 @@
 ---
 name: cardgame-catalog
-description: 实时浏览和编辑游戏内容。需要先试玩的改动与跨内容改动由一个制作事项负责。
+description: 实时编辑游戏内容，直接交付的单项修改检查后提交到 main；需要先试玩或跨内容的改动由一个制作事项负责。
 ---
 
 分页查找用 `collection`，单条记录用 `record({id})`（读取字段、实时引用与游戏内 `source` 文件及 JSON Pointer）；优先查看上下文中的 `note.recordTarget` 获取当前打开的记录。

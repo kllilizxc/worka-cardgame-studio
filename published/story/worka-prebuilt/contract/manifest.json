@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "99bec6f13e1c50f7b0c37761ce188125638c20dd95728bd01ec5da333d795966",
+  "codeVersion": "bc539708b33d15f7ed8208d4bc9b583fd9d5cd8c424fc676ead6f6e056b62fd9",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -18,7 +18,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-story",
-    "description": "实时阅读和编辑剧情原稿。需要先试玩的改动与跨内容改动由一个制作事项负责。"
+    "description": "实时编辑剧情原稿，直接交付的单项修改检查后提交到 main；需要先试玩或跨内容的改动由一个制作事项负责。"
   },
   "typeErrors": []
 }
