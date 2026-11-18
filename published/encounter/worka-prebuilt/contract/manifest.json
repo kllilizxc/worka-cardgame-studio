@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "codeVersion": "beac41dccf76c525580b2fcadcfcc45a0265ef86627f29369582fa8650028219",
+  "codeVersion": "ef2d19e469c190ecb1f0c40eef625a23eeca40233714ce02be376e8a2ed36f46",
   "status": "ready",
   "files": [
     "SKILL.md",
@@ -17,7 +17,7 @@
   "diagnostics": [],
   "skill": {
     "name": "cardgame-catalog",
-    "description": "实时浏览和编辑游戏内容。需要先试玩的改动与跨内容改动由一个制作事项负责。"
+    "description": "实时编辑游戏内容，直接交付的单项修改检查后提交到 main；需要先试玩或跨内容的改动由一个制作事项负责。"
   },
   "typeErrors": []
 }
