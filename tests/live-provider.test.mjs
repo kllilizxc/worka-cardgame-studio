@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,readFile,realpath,writeFile,rm,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,readFile,readdir,realpath,writeFile,rm,symlink} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {tmpdir} from 'node:os';
@@ -17,6 +17,12 @@ async function until(check,label,timeoutMs=8000){
   throw Error(label);
 }
 
+let nextBind = 0;
+function runBind(provider,input,caller) {
+  const desktop = input.desktopId ?? (caller.sessionId==='desktop-two'?'two':'one');
+  const noteId = caller.noteId ?? `${desktop}-story`;
+  return provider.commands.bind.run(input,{noteId,caller,executionId:`command:bind-${++nextBind}`,signal:new AbortController().signal});
+}
 async function createFixture(dir){
   const game=join(dir,'game'),records=new Map(),notes=new Map(),coreListeners=new Set();
   for(const path of ['public/data/cards','public/data/decks','public/assets','knowledge'])await mkdir(join(game,path),{recursive:true});
@@ -50,6 +56,7 @@ async function createFixture(dir){
         writeRecord:async(table,k,v)=>{records.set(table+'/'+k,v);emit(table,k);},
         getNote:async id=>notes.has(id)?{value:notes.get(id)}:undefined,
         listNotes:async({desktopId}={})=>[...notes.entries()].filter(([,v])=>!desktopId||v.desktopId===desktopId).map(([key,value])=>({key,value})),
+        getExecution:async()=>undefined,
         getSession:async id=>({value:id==='desktop-one'?{desktopId:'one'}:id==='cards-chat-one'?{desktopId:'one',noteId:'one-cards',delegationId:'task-1'}:id==='desktop-two'?{desktopId:'two'}:undefined}),
         subscribe:fn=>{coreListeners.add(fn);return()=>coreListeners.delete(fn);},
       },
@@ -88,15 +95,15 @@ test('live paginated reads, fs.watch invalidation, note-session callers, and liv
 
       // Note sessions and task sessions on the same desktop are allowed (no desktop-chat-only gate), while cross-desktop and readOnly are rejected.
       const [b1,b2]=await Promise.all([
-        provider.invoke('bind',{source:f.game},{kind:'agent',sessionId:'cards-chat-one',noteId:'one-cards',controlNoteId:'one-cards'}),
-        provider.invoke('bind',{source:f.game},{kind:'agent',sessionId:'desktop-one'}),
+        runBind(provider,{source:f.game},{kind:'agent',sessionId:'cards-chat-one',noteId:'one-cards',controlNoteId:'one-cards'}),
+        runBind(provider,{source:f.game},{kind:'agent',sessionId:'desktop-one'}),
       ]);
       assert.deepEqual(b1,b2);
       assert.equal(b1.root,await realpath(f.game));
       assert.equal((await provider.resources.status.load({},ctx('one-cards'))).ready,true);
       assert.equal((await provider.resources.status.load({},ctx('two-cards'))).configured,false);
-      await assert.rejects(provider.invoke('bind',{source:f.game,desktopId:'two'},{kind:'agent',sessionId:'cards-chat-one'}),/当前桌面/);
-      await assert.rejects(provider.invoke('bind',{source:f.game},{kind:'agent',sessionId:'cards-chat-one',readOnly:true}),/可写/);
+      await assert.rejects(runBind(provider,{source:f.game,desktopId:'two'},{kind:'agent',sessionId:'cards-chat-one'}),/当前桌面/);
+      await assert.rejects(runBind(provider,{source:f.game},{kind:'agent',sessionId:'cards-chat-one',readOnly:true}),/可写/);
 
       // Paginated catalog read returns only this note's kind, a page at a time, plus live reciprocal links.
       const page1=await provider.resources.catalog.query.load({op:'page',size:1,page:1,sort:'name'},ctx('one-cards'));
@@ -167,7 +174,7 @@ test('worktree branch commit and OK merge into main push to remote and update bo
 
     const provider=gameProject(f.host);
     try{
-      await provider.invoke('bind',{desktopId:'one',source:f.game},{kind:'user'});
+      await runBind(provider,{desktopId:'one',source:f.game},{kind:'user'});
       let invalidations=0;
       const stop=provider.resources.catalog.query.subscribe({op:'page'},()=>{invalidations++;},ctx('one-cards'));
       try{
@@ -216,7 +223,7 @@ test('N reads share one cached projection until a file change triggers exactly o
 
     const provider=gameProject(f.host,{onBuild:()=>{builds++;}});
     try{
-      await provider.invoke('bind',{desktopId:'one',source:f.game},{kind:'user'});
+      await runBind(provider,{desktopId:'one',source:f.game},{kind:'user'});
       assert.equal(builds,0);
 
       let invalidations=0;
@@ -287,19 +294,19 @@ test('rebinding a desktop closes the old root watcher only after its last deskto
 
     const provider=gameProject(f.host,{watch});
     try{
-      await provider.invoke('bind',{desktopId:'one',source:gameA},{kind:'user'});
-      await provider.invoke('bind',{desktopId:'two',source:gameA},{kind:'user'});
+      await runBind(provider,{desktopId:'one',source:gameA},{kind:'user'});
+      await runBind(provider,{desktopId:'two',source:gameA},{kind:'user'});
       await provider.resources.catalog.query.load({op:'overview'},ctx('one-cards'));
       assert.equal(activeWatchers.get(gameA)?.closed,false);
 
       // Desktop 'one' rebinds to gameB while desktop 'two' still uses gameA -> gameA watcher stays open!
-      await provider.invoke('bind',{desktopId:'one',source:gameB},{kind:'user'});
+      await runBind(provider,{desktopId:'one',source:gameB},{kind:'user'});
       await provider.resources.catalog.query.load({op:'overview'},ctx('one-cards'));
       assert.equal(activeWatchers.get(gameA)?.closed,false);
       assert.equal(activeWatchers.get(gameB)?.closed,false);
 
       // Desktop 'two' now also rebinds to gameB -> no desktop uses gameA -> gameA watcher is closed!
-      await provider.invoke('bind',{desktopId:'two',source:gameB},{kind:'user'});
+      await runBind(provider,{desktopId:'two',source:gameB},{kind:'user'});
       assert.equal(activeWatchers.get(gameA)?.closed,true);
       assert.equal(activeWatchers.get(gameB)?.closed,false);
     }finally{
@@ -311,3 +318,48 @@ test('rebinding a desktop closes the old root watcher only after its last deskto
   }
 });
 
+
+
+test('a cancelled clone clears its temporary checkout and a later bind can proceed', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cardgame-clone-cancel-'));
+  try {
+    const {game,host} = await createFixture(root);
+    const bin=join(root,'bin'), marker=join(root,'git-started');
+    const realGit=execFileSync('which',['git'],{encoding:'utf8'}).trim();
+    await mkdir(bin);
+    await writeFile(join(bin,'git'),`#!${process.execPath}
+const {writeFileSync}=require('node:fs');
+const {spawnSync}=require('node:child_process');
+if(process.argv.includes('clone')){
+  writeFileSync(${JSON.stringify(marker)},String(process.pid));
+  setInterval(()=>{},1000);
+}else{
+  const result=spawnSync(${JSON.stringify(realGit)},process.argv.slice(2),{stdio:'inherit'});
+  process.exit(result.status??1);
+}
+`,{mode:0o700});
+    host.runtime.subprocess={spawn:spec=>testSubprocess.spawn({...spec,env:{...spec.env,PATH:`${bin}:${process.env.PATH}`}})};
+    const provider=gameProject(host,{processOptions:{timeoutMs:1000}});
+    try {
+      const controller=new AbortController();
+      const running=provider.commands.bind.run({desktopId:'one'},{noteId:'one-story',caller:{kind:'user'},executionId:'command:cancel-clone',signal:controller.signal});
+      const rejected=assert.rejects(running);
+      try {
+        await until(()=>readFile(marker).then(()=>true,()=>false),'clone did not start');
+        const status=await provider.resources.status.load({},ctx('one-cards'));
+        assert.equal(status.executionId,'command:cancel-clone');
+        assert.equal(status.ready,false);
+      } finally {
+        controller.abort();
+        await rejected;
+      }
+      const pid=Number(await readFile(marker,'utf8'));
+      await until(()=>{try{process.kill(pid,0);return false;}catch(error){return error.code==='ESRCH';}},'cancelled Git process did not exit');
+      const [desktop]=await readdir(join(host.dataRoot,'providers','game-project'));
+      assert.deepEqual(await readdir(join(host.dataRoot,'providers','game-project',desktop,'repos')),[]);
+      assert.equal((await provider.resources.status.load({},ctx('one-cards'))).executionId,undefined);
+      const ready=await runBind(provider,{desktopId:'one',source:game},{kind:'user'});
+      assert.equal(ready.root,await realpath(game));
+    } finally {await provider.close();}
+  } finally {await rm(root,{recursive:true,force:true});}
+});

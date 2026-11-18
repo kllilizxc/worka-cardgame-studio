@@ -90,15 +90,21 @@ export function createProjectProcess(host, { timeoutMs = 10_000, maxPending = 16
     void generation.start.catch(error => { fail(generation, error); });
     return generation;
   }
-  function request(method, args, signal, deadlineMs = timeoutMs) {
-    if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) return Promise.reject(new TypeError('Invalid project request deadline'));
+  function request(method, args, signal) {
     if (closed) return Promise.reject(Error('Project process is closed'));
     if (signal?.aborted) return Promise.reject(signal.reason ?? Error('Project request cancelled'));
     if (pending.size >= maxPending) return Promise.reject(Error('Project process is busy'));
     const generation = start(), id = ++sequence;
     return new Promise((resolve, reject) => {
-      const abort = () => fail(generation, signal.reason ?? Error('Project request cancelled'));
-      const timer = setTimeout(() => fail(generation, Error('Project request timed out')), deadlineMs);
+      const checkout = method === 'checkout';
+      let sent = false;
+      const abort = () => {
+        if (!checkout) { fail(generation, signal.reason); return; }
+        if (!sent) { finish(id, signal.reason); return; }
+        void generation.process.stdin.write(JSON.stringify({ cancel: id }) + '\n')
+          .catch(error => fail(generation, error));
+      };
+      const timer = checkout ? undefined : setTimeout(() => fail(generation, Error('Project request timed out')), timeoutMs);
       pending.set(id, { generation, resolve, reject, timer, signal, abort });
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
@@ -106,6 +112,7 @@ export function createProjectProcess(host, { timeoutMs = 10_000, maxPending = 16
         if (!pending.has(id) || generation.failed) return;
         const frame = JSON.stringify({ id, method, args }) + '\n';
         if (Buffer.byteLength(frame) > maxFrameBytes) { finish(id, Error('Project request frame exceeds limit')); return; }
+        sent = true;
         await process.stdin.write(frame);
       }).catch(error => { fail(generation, error); });
     });
