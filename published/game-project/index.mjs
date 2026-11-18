@@ -8,8 +8,8 @@ import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 var workerFile = fileURLToPath(new URL("./project-worker.mjs", import.meta.url));
 var errorFrom = (value) => Object.assign(new Error(value?.message ?? "Project process failed"), value?.code ? { code: value.code } : {});
-function createProjectProcess(host, { timeoutMs = 1e4, maxPending = 16, maxFrameBytes = 32 * 1024 * 1024, entry = workerFile } = {}) {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || !Number.isInteger(maxPending) || maxPending < 1 || !Number.isInteger(maxFrameBytes) || maxFrameBytes < 1)
+function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024 * 1024, entry = workerFile } = {}) {
+  if (!Number.isInteger(maxPending) || maxPending < 1 || !Number.isInteger(maxFrameBytes) || maxFrameBytes < 1)
     throw new TypeError("Invalid project process limits");
   let current, retired = Promise.resolve(), closed = false, sequence = 0;
   const pending = new Map, watches = new Map;
@@ -31,7 +31,6 @@ function createProjectProcess(host, { timeoutMs = 1e4, maxPending = 16, maxFrame
     if (!call)
       return;
     pending.delete(id);
-    clearTimeout(call.timer);
     call.signal?.removeEventListener("abort", call.abort);
     error !== undefined ? call.reject(error) : call.resolve(value);
   }
@@ -170,8 +169,7 @@ function createProjectProcess(host, { timeoutMs = 1e4, maxPending = 16, maxFrame
         generation.process.stdin.write(JSON.stringify({ cancel: id }) + `
 `).catch((error) => fail(generation, error));
       };
-      const timer = checkout ? undefined : setTimeout(() => fail(generation, Error("Project request timed out")), timeoutMs);
-      pending.set(id, { generation, resolve, reject, timer, signal, abort });
+      pending.set(id, { generation, resolve, reject, signal, abort });
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted)
         abort();

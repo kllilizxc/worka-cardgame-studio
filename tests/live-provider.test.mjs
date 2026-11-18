@@ -339,7 +339,7 @@ if(process.argv.includes('clone')){
 }
 `,{mode:0o700});
     host.runtime.subprocess={spawn:spec=>testSubprocess.spawn({...spec,env:{...spec.env,PATH:`${bin}:${process.env.PATH}`}})};
-    const provider=gameProject(host,{processOptions:{timeoutMs:1000}});
+    const provider=gameProject(host);
     try {
       const controller=new AbortController();
       const running=provider.commands.bind.run({desktopId:'one'},{noteId:'one-story',caller:{kind:'user'},executionId:'command:cancel-clone',signal:controller.signal});
