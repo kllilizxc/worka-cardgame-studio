@@ -320,7 +320,7 @@
     {
       "key": "playtest-todo",
       "name": "试玩 → 制作",
-      "goal": "试玩时的反馈回到同一制作事项会话；用户回复 OK 即把分支合入游戏的 main（GitHub 远端一并推送）并将事项标为完成。",
+      "goal": "试玩反馈回到同一制作事项会话；用户回复 OK 即合入确认版，按绑定仓库的推送配置同步并完成该事项。",
       "enabled": true,
       "nodeKeys": [
         "preview",
