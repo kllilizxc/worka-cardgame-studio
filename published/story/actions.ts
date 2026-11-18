@@ -10,6 +10,30 @@ async function readStory<T>(ctx:import('@dsh-workbench/runtime').NoteQueryContex
   return {data:snap.data??null,revision:`${snap.epoch}:${snap.version}`};
 }
 
+const statusOutputSchema=z.object({
+  configured:z.boolean(),
+  ready:z.boolean(),
+  root:z.string().optional(),
+  commit:z.string().optional(),
+  verifiedAt:z.number().optional(),
+  label:z.string().optional(),
+  executionId:z.string().optional(),
+  message:z.string().optional(),
+});
+
+export const status=note.query({
+  visibility:'public',
+  description:'读取当前桌面已绑定的 CardGame 仓库路径、当前提交与就绪状态。',
+  input:z.object({}),
+  output:statusOutputSchema,
+},async ctx=>{
+  const config=storyConfigSchema.parse(await ctx.config.read());
+  if(!config.connections?.game)return {configured:false,ready:false};
+  const snap=await ctx.resources.read<z.infer<typeof statusOutputSchema>>({name:'extension.game-project.status',connection:'game',input:{}});
+  if(snap.error)throw Error(snap.error);
+  return statusOutputSchema.parse(snap.data??{configured:false,ready:false});
+});
+
 export const scenes=note.query({
   visibility:'public',
   description:'按名称、正文、对白或 ID 分页检索剧情；保留 next 可继续翻页。',
