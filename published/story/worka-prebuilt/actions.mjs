@@ -21,6 +21,7 @@ __export(exports_actions, {
   scene: () => scene,
   sceneAsset: () => sceneAsset,
   scenes: () => scenes,
+  status: () => status,
   storyHome: () => storyHome,
   storyTreePage: () => storyTreePage
 });
@@ -7098,6 +7099,30 @@ async function readStory(ctx, input) {
     throw Error(snap.error);
   return { data: snap.data ?? null, revision: `${snap.epoch}:${snap.version}` };
 }
+var statusOutputSchema = object({
+  configured: boolean2(),
+  ready: boolean2(),
+  root: string2().optional(),
+  commit: string2().optional(),
+  verifiedAt: number2().optional(),
+  label: string2().optional(),
+  executionId: string2().optional(),
+  message: string2().optional()
+});
+var status = note.query({
+  visibility: "public",
+  description: "读取当前桌面已绑定的 CardGame 仓库路径、当前提交与就绪状态。",
+  input: object({}),
+  output: statusOutputSchema
+}, async (ctx) => {
+  const config = storyConfigSchema.parse(await ctx.config.read());
+  if (!config.connections?.game)
+    return { configured: false, ready: false };
+  const snap = await ctx.resources.read({ name: "extension.game-project.status", connection: "game", input: {} });
+  if (snap.error)
+    throw Error(snap.error);
+  return statusOutputSchema.parse(snap.data ?? { configured: false, ready: false });
+});
 var scenes = note.query({
   visibility: "public",
   description: "按名称、正文、对白或 ID 分页检索剧情；保留 next 可继续翻页。",

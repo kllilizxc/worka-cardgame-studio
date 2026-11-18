@@ -10,6 +10,29 @@ async function readCatalog<T>(ctx:import('@dsh-workbench/runtime').NoteQueryCont
   return snap.data??null;
 }
 
+const statusOutputSchema=z.object({
+  configured:z.boolean(),
+  ready:z.boolean(),
+  root:z.string().optional(),
+  commit:z.string().optional(),
+  verifiedAt:z.number().optional(),
+  label:z.string().optional(),
+  executionId:z.string().optional(),
+  message:z.string().optional(),
+});
+
+export const status=note.query({
+  description:'读取当前桌面已绑定的 CardGame 仓库路径、当前提交与就绪状态。',
+  input:z.object({}),
+  output:statusOutputSchema,
+},async ctx=>{
+  const config=configSchema.parse({kind:'cards',...await ctx.config.read()});
+  if(!config.connections?.game)return {configured:false,ready:false};
+  const snap=await ctx.resources.read<z.infer<typeof statusOutputSchema>>({name:'extension.game-project.status',connection:'game',input:{}});
+  if(snap.error)throw Error(snap.error);
+  return statusOutputSchema.parse(snap.data??{configured:false,ready:false});
+});
+
 export const asset=note.query({visibility:'private',description:'读取已绑定游戏中的实际素材。',input:z.object({key:z.string()}),output:z.string().nullable()},async(ctx,input)=>{
   const config=await ctx.config.read();
   if(!config.connections?.game)return null;

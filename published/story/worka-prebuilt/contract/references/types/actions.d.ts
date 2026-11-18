@@ -1,5 +1,15 @@
 import { z } from '@dsh-workbench/runtime';
 export { note } from './model';
+export declare const status: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{}, z.core.$strip>, z.ZodObject<{
+    configured: z.ZodBoolean;
+    ready: z.ZodBoolean;
+    root: z.ZodOptional<z.ZodString>;
+    commit: z.ZodOptional<z.ZodString>;
+    verifiedAt: z.ZodOptional<z.ZodNumber>;
+    label: z.ZodOptional<z.ZodString>;
+    executionId: z.ZodOptional<z.ZodString>;
+    message: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>, "query">;
 export declare const scenes: import("@dsh-workbench/runtime").NoteOperation<z.ZodObject<{
     query: z.ZodOptional<z.ZodString>;
     cursor: z.ZodOptional<z.ZodString>;

@@ -22,7 +22,8 @@ __export(exports_actions, {
   note: () => note,
   overview: () => overview,
   record: () => record2,
-  recordsPage: () => recordsPage
+  recordsPage: () => recordsPage,
+  status: () => status
 });
 
 
@@ -6935,6 +6936,29 @@ async function readCatalog(ctx, input) {
     throw Error(snap.error);
   return snap.data ?? null;
 }
+var statusOutputSchema = object({
+  configured: boolean2(),
+  ready: boolean2(),
+  root: string2().optional(),
+  commit: string2().optional(),
+  verifiedAt: number2().optional(),
+  label: string2().optional(),
+  executionId: string2().optional(),
+  message: string2().optional()
+});
+var status = note.query({
+  description: "读取当前桌面已绑定的 CardGame 仓库路径、当前提交与就绪状态。",
+  input: object({}),
+  output: statusOutputSchema
+}, async (ctx) => {
+  const config = configSchema.parse({ kind: "cards", ...await ctx.config.read() });
+  if (!config.connections?.game)
+    return { configured: false, ready: false };
+  const snap = await ctx.resources.read({ name: "extension.game-project.status", connection: "game", input: {} });
+  if (snap.error)
+    throw Error(snap.error);
+  return statusOutputSchema.parse(snap.data ?? { configured: false, ready: false });
+});
 var asset = note.query({ visibility: "private", description: "读取已绑定游戏中的实际素材。", input: object({ key: string2() }), output: string2().nullable() }, async (ctx, input) => {
   const config = await ctx.config.read();
   if (!config.connections?.game)
