@@ -16,11 +16,21 @@ async function command(name:string,input:unknown,ctx:ActionContext){
 }
 export const receive = note.action({visibility:'public',"description":"接收或更新同一 key 的执行候选；接收不代表启动或验收通过。","objectRef":"/candidate/key","receipt":"queryable",input:receiveInputSchema,output:z.union([z.looseObject({renamed:z.number()}),z.looseObject({candidate:z.object({key:z.string()}),accepted:z.boolean(),startRequested:z.boolean(),started:z.literal(false)}),z.looseObject({accepted:z.boolean(),key:z.string(),desired:z.enum(['running','stopped'])})])}, async (ctx, input) => {
   if (input?.operation === 'rename') return renameCandidates(ctx, input);
-  const hasOwner = Boolean(input?.originNoteId?.trim() && input?.delegationId?.trim());
-  if (!hasOwner) {
-    const existing = input?.key ? (await ctx.runQuery(candidate, { key: input.key }))?.candidate : null;
-    if (!existing?.originNoteId || !existing?.delegationId) {
-      throw Error('试玩候选必须关联「制作待办」事项：请先在「制作待办」创建并绑定本会话的事项（addTodo + linkSession + recordProgress），再传入 originNoteId 与 delegationId（key 使用该 itemId）登记试玩。');
+  let originNoteId = input.originNoteId?.trim();
+  let delegationId = input.delegationId?.trim();
+  if (!originNoteId && !delegationId && input.key) {
+    const existing = (await ctx.runQuery(candidate, { key: input.key }))?.candidate;
+    originNoteId = existing?.originNoteId;
+    delegationId = existing?.delegationId;
+  }
+  if (!originNoteId || !delegationId) {
+    throw Error('试玩候选必须关联「制作待办」事项：绑定负责会话后，传入 originNoteId 和 delegationId 登记试玩。');
+  }
+  if (!input.operation) {
+    const result = await ctx.notes.query<{item?: {id: string; archived?: boolean; assignment?: {sessionId?: string}; sessions?: {sessionId: string; archived?: boolean}[]}}>({noteId:originNoteId,name:'items',input:{itemId:delegationId}});
+    const item = result.item;
+    if (item?.id !== delegationId || item.archived || !(item.assignment?.sessionId || item.sessions?.some(session => !session.archived && session.sessionId))) {
+      throw Error('试玩候选需要未归档且已绑定负责会话的「制作待办」事项。');
     }
   }
   return command('receive',input,ctx);

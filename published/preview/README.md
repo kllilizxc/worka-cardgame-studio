@@ -7,17 +7,13 @@ New projects must use a version:3 `preview.config.mjs` with evidence-backed
 and consult the types exported by `@realiz3r/worka-runtime/preview`. Worka owns workspaces, ports, cancellation,
 processes and cleanup.
 
-`candidates` are launch options for a project preview. They can be delivered over a
-registered work connection by a linked Todo task, or registered standalone by any
-note or conversation: the sender verifies the actual candidate commit/worktree and
-supplies `{key, adapter, repos}` (or `{key, adapter, cwd, revision}` for one repository). A candidate synced from a
-delegation also carries `originNoteId` and `delegationId`; those are optional
-provenance, used to resolve the current owning task session and to let the
-view jump back to its delegation. Delegation-sourced candidates use the delegation
-id as their key (additional options use `delegationId#2`, `delegationId#3`, …);
-standalone candidates use a self-chosen stable key. `title` names the option in the
-list. Provenance is optional but never silently dropped: an update or retry reuses
-the same key and, when it already exists, the same source identity.
+`candidates` are launch options owned by a linked Todo item. The sender verifies
+the candidate commit/worktree and supplies `{key, adapter, repos, originNoteId,
+delegationId}` (or `cwd` and `revision` instead of `repos` for one repository).
+The source item must be active with an owning conversation. Candidates use the
+item ID as their key (additional options use `delegationId#2`, `delegationId#3`, …).
+`title` names the option in the list. An update or retry keeps the same key and
+source identity so feedback can return to the item’s owning conversation.
 `status[surface]` is written only by the host: phase, steps, URL, project checks and failure facts and logs. The view renders it as-is.
 `attached` is a durable record maintained by `attach({key, attached})` and cleared
 by `forget`. The current interface retains up to two pages opened in this session;

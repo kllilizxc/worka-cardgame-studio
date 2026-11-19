@@ -48,6 +48,7 @@ test('the actual CardGame catalog resolves story, map and encounter launch paylo
 test('preview receive rejects unowned standalone candidates and accepts Todo-owned candidates',async()=>{
   const {dispatch}=await import('../published/preview/worka-prebuilt/actions.mjs');
   const existing=new Map();
+  const items=new Map();
   const calls=[];
   const raw={
     executionKind:'action',
@@ -59,6 +60,11 @@ test('preview receive rejects unowned standalone candidates and accepts Todo-own
       assert.equal(name,'candidate');
       return existing.get(input.key)??null;
     },
+    notes:{async query({noteId,name,input}){
+      assert.equal(noteId,'todo-note');
+      assert.equal(name,'items');
+      return {item:items.get(input.itemId)};
+    }},
     previews:{
       async command(name,input){
         calls.push({name,input});
@@ -73,6 +79,11 @@ test('preview receive rejects unowned standalone candidates and accepts Todo-own
   assert.equal(calls.length,0);
 
   const owned={key:'todo-1',originNoteId:'todo-note',delegationId:'todo-1',adapter:'/p/preview.config.mjs',repos:{game:{repo:'/game',commit:'b'.repeat(40)}}};
+  await assert.rejects(()=>dispatch({method:'execute',name:'receive',input:owned},raw),/已绑定负责会话/);
+  items.set('todo-1',{id:'todo-1',sessions:[{sessionId:'worker-1',archived:true}]});
+  await assert.rejects(()=>dispatch({method:'execute',name:'receive',input:owned},raw),/已绑定负责会话/);
+  assert.equal(calls.length,0);
+  items.set('todo-1',{id:'todo-1',sessions:[{sessionId:'worker-1'}]});
   const first=await dispatch({method:'execute',name:'receive',input:owned},raw);
   assert.equal(first.accepted,true);
   assert.equal(calls.length,1);
