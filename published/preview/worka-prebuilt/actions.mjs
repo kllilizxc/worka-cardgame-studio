@@ -7127,7 +7127,16 @@ async function command(name, input, ctx) {
   return ctx.host.previews.command(name, input);
 }
 var receive = note.action({ visibility: "public", description: "接收或更新同一 key 的执行候选；接收不代表启动或验收通过。", objectRef: "/candidate/key", receipt: "queryable", input: receiveInputSchema, output: union([looseObject({ renamed: number2() }), looseObject({ candidate: object({ key: string2() }), accepted: boolean2(), startRequested: boolean2(), started: literal(false) }), looseObject({ accepted: boolean2(), key: string2(), desired: _enum(["running", "stopped"]) })]) }, async (ctx, input) => {
-  return input?.operation === "rename" ? renameCandidates(ctx, input) : command("receive", input, ctx);
+  if (input?.operation === "rename")
+    return renameCandidates(ctx, input);
+  const hasOwner = Boolean(input?.originNoteId?.trim() && input?.delegationId?.trim());
+  if (!hasOwner) {
+    const existing = input?.key ? (await ctx.runQuery(candidate, { key: input.key }))?.candidate : null;
+    if (!existing?.originNoteId || !existing?.delegationId) {
+      throw Error("试玩候选必须关联「制作待办」事项：请先在「制作待办」创建并绑定本会话的事项（addTodo + linkSession + recordProgress），再传入 originNoteId 与 delegationId（key 使用该 itemId）登记试玩。");
+    }
+  }
+  return command("receive", input, ctx);
 });
 var start = note.action({ description: "启动或重启整个候选容器组。", visibility: "public", input: object({ key: string2(), surface: string2().optional(), restart: boolean2().optional() }), output: looseObject({ accepted: boolean2(), key: string2(), desired: _enum(["running", "stopped"]) }) }, async (ctx, input) => {
   return command("start", input, ctx);

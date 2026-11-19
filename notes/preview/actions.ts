@@ -15,7 +15,15 @@ async function command(name:string,input:unknown,ctx:ActionContext){
   return ctx.host.previews.command(name,input as any);
 }
 export const receive = note.action({visibility:'public',"description":"接收或更新同一 key 的执行候选；接收不代表启动或验收通过。","objectRef":"/candidate/key","receipt":"queryable",input:receiveInputSchema,output:z.union([z.looseObject({renamed:z.number()}),z.looseObject({candidate:z.object({key:z.string()}),accepted:z.boolean(),startRequested:z.boolean(),started:z.literal(false)}),z.looseObject({accepted:z.boolean(),key:z.string(),desired:z.enum(['running','stopped'])})])}, async (ctx, input) => {
-  return input?.operation==='rename'?renameCandidates(ctx,input):command('receive',input,ctx);
+  if (input?.operation === 'rename') return renameCandidates(ctx, input);
+  const hasOwner = Boolean(input?.originNoteId?.trim() && input?.delegationId?.trim());
+  if (!hasOwner) {
+    const existing = input?.key ? (await ctx.runQuery(candidate, { key: input.key }))?.candidate : null;
+    if (!existing?.originNoteId || !existing?.delegationId) {
+      throw Error('试玩候选必须关联「制作待办」事项：请先在「制作待办」创建并绑定本会话的事项（addTodo + linkSession + recordProgress），再传入 originNoteId 与 delegationId（key 使用该 itemId）登记试玩。');
+    }
+  }
+  return command('receive',input,ctx);
 });
 export const start = note.action({"description":"启动或重启整个候选容器组。","visibility":"public",input:z.object({key:z.string(),surface:z.string().optional(),restart:z.boolean().optional()}),output:z.looseObject({accepted:z.boolean(),key:z.string(),desired:z.enum(['running','stopped'])})}, async (ctx, input) => {
   return command('start',input,ctx);
