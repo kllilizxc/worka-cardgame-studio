@@ -7127,7 +7127,26 @@ async function command(name, input, ctx) {
   return ctx.host.previews.command(name, input);
 }
 var receive = note.action({ visibility: "public", description: "接收或更新同一 key 的执行候选；接收不代表启动或验收通过。", objectRef: "/candidate/key", receipt: "queryable", input: receiveInputSchema, output: union([looseObject({ renamed: number2() }), looseObject({ candidate: object({ key: string2() }), accepted: boolean2(), startRequested: boolean2(), started: literal(false) }), looseObject({ accepted: boolean2(), key: string2(), desired: _enum(["running", "stopped"]) })]) }, async (ctx, input) => {
-  return input?.operation === "rename" ? renameCandidates(ctx, input) : command("receive", input, ctx);
+  if (input?.operation === "rename")
+    return renameCandidates(ctx, input);
+  let originNoteId = input.originNoteId?.trim();
+  let delegationId = input.delegationId?.trim();
+  if (!originNoteId && !delegationId && input.key) {
+    const existing = (await ctx.runQuery(candidate, { key: input.key }))?.candidate;
+    originNoteId = existing?.originNoteId;
+    delegationId = existing?.delegationId;
+  }
+  if (!originNoteId || !delegationId) {
+    throw Error("试玩候选必须关联「制作待办」事项：绑定负责会话后，传入 originNoteId 和 delegationId 登记试玩。");
+  }
+  if (!input.operation) {
+    const result = await ctx.notes.query({ noteId: originNoteId, name: "items", input: { itemId: delegationId } });
+    const item = result.item;
+    if (item?.id !== delegationId || item.archived || !(item.assignment?.sessionId || item.sessions?.some((session) => !session.archived && session.sessionId))) {
+      throw Error("试玩候选需要未归档且已绑定负责会话的「制作待办」事项。");
+    }
+  }
+  return command("receive", input, ctx);
 });
 var start = note.action({ description: "启动或重启整个候选容器组。", visibility: "public", input: object({ key: string2(), surface: string2().optional(), restart: boolean2().optional() }), output: looseObject({ accepted: boolean2(), key: string2(), desired: _enum(["running", "stopped"]) }) }, async (ctx, input) => {
   return command("start", input, ctx);

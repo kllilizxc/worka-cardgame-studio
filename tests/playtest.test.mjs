@@ -44,3 +44,52 @@ test('the actual CardGame catalog resolves story, map and encounter launch paylo
     for(const r of real)assert.equal(gameEntry(root,{kind,resourceId:r.resourceId}).scene,scene);
   }
 });
+
+test('preview receive rejects unowned standalone candidates and accepts Todo-owned candidates',async()=>{
+  const {dispatch}=await import('../published/preview/worka-prebuilt/actions.mjs');
+  const existing=new Map();
+  const items=new Map();
+  const calls=[];
+  const raw={
+    executionKind:'action',
+    note:{id:'preview-note'},
+    data:{async getConfig(){return {};}},
+    resources:{async read(){return null;},async revalidate(){return null;}},
+    async invoke({kind,name,input}){
+      assert.equal(kind,'query');
+      assert.equal(name,'candidate');
+      return existing.get(input.key)??null;
+    },
+    notes:{async query({noteId,name,input}){
+      assert.equal(noteId,'todo-note');
+      assert.equal(name,'items');
+      return {item:items.get(input.itemId)};
+    }},
+    previews:{
+      async command(name,input){
+        calls.push({name,input});
+        return {accepted:true,key:input.key,desired:'running'};
+      },
+    },
+  };
+  await assert.rejects(
+    ()=>dispatch({method:'execute',name:'receive',input:{key:'standalone',adapter:'/p/preview.config.mjs',repos:{game:{repo:'/game',commit:'a'.repeat(40)}}}},raw),
+    /制作待办/,
+  );
+  assert.equal(calls.length,0);
+
+  const owned={key:'todo-1',originNoteId:'todo-note',delegationId:'todo-1',adapter:'/p/preview.config.mjs',repos:{game:{repo:'/game',commit:'b'.repeat(40)}}};
+  await assert.rejects(()=>dispatch({method:'execute',name:'receive',input:owned},raw),/已绑定负责会话/);
+  items.set('todo-1',{id:'todo-1',sessions:[{sessionId:'worker-1',archived:true}]});
+  await assert.rejects(()=>dispatch({method:'execute',name:'receive',input:owned},raw),/已绑定负责会话/);
+  assert.equal(calls.length,0);
+  items.set('todo-1',{id:'todo-1',sessions:[{sessionId:'worker-1'}]});
+  const first=await dispatch({method:'execute',name:'receive',input:owned},raw);
+  assert.equal(first.accepted,true);
+  assert.equal(calls.length,1);
+
+  existing.set('todo-1',{candidate:{key:'todo-1',originNoteId:'todo-note',delegationId:'todo-1',receivedAt:1},revision:'r1'});
+  const retry=await dispatch({method:'execute',name:'receive',input:{key:'todo-1',adapter:'/p/preview.config.mjs',repos:{game:{repo:'/game',commit:'c'.repeat(40)}}}},raw);
+  assert.equal(retry.accepted,true);
+  assert.equal(calls.length,2);
+});

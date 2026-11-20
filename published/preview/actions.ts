@@ -15,7 +15,25 @@ async function command(name:string,input:unknown,ctx:ActionContext){
   return ctx.host.previews.command(name,input as any);
 }
 export const receive = note.action({visibility:'public',"description":"接收或更新同一 key 的执行候选；接收不代表启动或验收通过。","objectRef":"/candidate/key","receipt":"queryable",input:receiveInputSchema,output:z.union([z.looseObject({renamed:z.number()}),z.looseObject({candidate:z.object({key:z.string()}),accepted:z.boolean(),startRequested:z.boolean(),started:z.literal(false)}),z.looseObject({accepted:z.boolean(),key:z.string(),desired:z.enum(['running','stopped'])})])}, async (ctx, input) => {
-  return input?.operation==='rename'?renameCandidates(ctx,input):command('receive',input,ctx);
+  if (input?.operation === 'rename') return renameCandidates(ctx, input);
+  let originNoteId = input.originNoteId?.trim();
+  let delegationId = input.delegationId?.trim();
+  if (!originNoteId && !delegationId && input.key) {
+    const existing = (await ctx.runQuery(candidate, { key: input.key }))?.candidate;
+    originNoteId = existing?.originNoteId;
+    delegationId = existing?.delegationId;
+  }
+  if (!originNoteId || !delegationId) {
+    throw Error('试玩候选必须关联「制作待办」事项：绑定负责会话后，传入 originNoteId 和 delegationId 登记试玩。');
+  }
+  if (!input.operation) {
+    const result = await ctx.notes.query<{item?: {id: string; archived?: boolean; assignment?: {sessionId?: string}; sessions?: {sessionId: string; archived?: boolean}[]}}>({noteId:originNoteId,name:'items',input:{itemId:delegationId}});
+    const item = result.item;
+    if (item?.id !== delegationId || item.archived || !(item.assignment?.sessionId || item.sessions?.some(session => !session.archived && session.sessionId))) {
+      throw Error('试玩候选需要未归档且已绑定负责会话的「制作待办」事项。');
+    }
+  }
+  return command('receive',input,ctx);
 });
 export const start = note.action({"description":"启动或重启整个候选容器组。","visibility":"public",input:z.object({key:z.string(),surface:z.string().optional(),restart:z.boolean().optional()}),output:z.looseObject({accepted:z.boolean(),key:z.string(),desired:z.enum(['running','stopped'])})}, async (ctx, input) => {
   return command('start',input,ctx);
