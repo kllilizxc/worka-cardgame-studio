@@ -131,7 +131,7 @@ export default function Expanded(){
 
   if(active.loading&&!resolved)return <section className="story-app"><p>读取中…</p></section>;
   if(resolved?.configured===false){
-    return <section className="story-app"><p>连接 CardGame 仓库后即可实时阅读与编辑剧情。<button type="button" onClick={()=>void setup.run(()=>host.openSetup())}>连接游戏仓库</button></p>{setup.error&&<p role="alert">{setup.error.message}</p>}</section>;
+    return <section className="story-app"><div className="story-unbound"><p>连接 CardGame 仓库后即可实时阅读与编辑剧情。</p><button type="button" onClick={()=>void setup.run(()=>host.openSetup())}>连接游戏仓库</button>{setup.error&&<p role="alert">{setup.error.message}</p>}</div></section>;
   }
   if(!row){
     return <section className="story-app"><p>{routeId?'找不到这条剧情记录。':'当前仓库暂无剧情记录。'}</p>{routeId&&<button onClick={()=>navigate(rootPath)}>返回章节</button>}</section>;

@@ -1,1 +1,0 @@
-import{e}from"./entry-gybsj9jx.js";import{defineNoteView as t}from"@dsh-workbench/react";var p=t({compactSurface:"transparent",compact:()=>(e("tnrxsq4e"),import("./compact-tnrxsq4e.js")),expanded:()=>(e("6ej4d0ef"),import("./expanded-6ej4d0ef.js"))});export{p as default};

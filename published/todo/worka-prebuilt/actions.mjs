@@ -6505,6 +6505,7 @@ function describe2(name, definition) {
     ...definition.input ? { inputSchema: schema(definition.input, "input") } : {},
     outputSchema: schema(definition.output, "output"),
     ...definition.kind === "event" ? {} : { executionKind: definition.kind },
+    ...definition.kind === "event" && definition.settleMs !== undefined ? { settleMs: definition.settleMs } : {},
     ...definition.visibility === "private" ? { visibility: "private" } : {},
     ...Object.fromEntries(["objectRef", "objectLabel", "revision", "receipt"].filter((key) => definition[key] !== undefined).map((key) => [key, definition[key]]))
   };

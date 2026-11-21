@@ -1,6 +1,7 @@
 import {defineNoteView} from '@realiz3r/worka-react';
 
 const branches={
+  compactSurface:'transparent' as const,
   compact:()=>import('./view-compact'),
   expanded:()=>import('./view-expanded'),
 };

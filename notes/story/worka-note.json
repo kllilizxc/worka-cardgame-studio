@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "style": "custom",
   "name": "剧情知识库",
   "scenarios": "实时阅读与直接编辑游戏剧情原稿、章节分支和关联记录。",
   "icon": {

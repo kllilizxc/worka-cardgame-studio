@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "style": "custom",
   "name": "游戏内容库",
   "scenarios": "实时浏览、搜索并直接编辑秘境、战斗、卡牌、怪物、人物、商店与素材。",
   "icon": {

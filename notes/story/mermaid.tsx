@@ -50,8 +50,8 @@ const MermaidDiagram = memo(function MermaidDiagram({source}: {source:string}) {
   return <div ref={element} className="reader-diagram" style={{minHeight:80, margin:'16px 0'}}>
     {current?.svg ? <div role="img" aria-label={t("Mermaid 图表")} style={{overflowX:'auto'}} dangerouslySetInnerHTML={{__html:current.svg}} />
       : current?.error ? <div><p role="status">{t.rich("图表暂时无法渲染，请检查 Mermaid 语法或继续加载完整代码块。")}</p><pre><code>{source}</code></pre><details><summary>{t.rich("错误详情")}</summary><pre>{current.error}</pre></details></div>
-      : <p role="status" style={{color:'var(--wb-muted)',fontSize:12}}>{t.rich("正在准备图表…")}</p>}
-    {current?.svg && <details style={{fontSize:12,color:'var(--wb-muted)'}}><summary style={{cursor:'pointer'}}>{t.rich("图表源码")}</summary><pre><code>{source}</code></pre></details>}
+      : <p role="status" className="reader-diagram-status">{t.rich("正在准备图表…")}</p>}
+    {current?.svg && <details className="reader-diagram-source"><summary style={{cursor:'pointer'}}>{t.rich("图表源码")}</summary><pre><code>{source}</code></pre></details>}
   </div>;
 });
 

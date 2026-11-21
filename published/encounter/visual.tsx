@@ -28,5 +28,5 @@ export function SymbolIcon({name}:{name:keyof typeof paths}){
 }
 const covers = Object.fromEntries(Object.entries(illustration).map(([kind,svg])=>[kind,'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)]));
 export function CategoryArt({kind}:{kind:Kind}){
-  return <img alt="" draggable={false} src={covers[kind]}/>;
+  return <img alt="" data-fallback-art="" draggable={false} src={covers[kind]}/>;
 }

@@ -1174,3 +1174,551 @@
  .folio.folio-expanded .folio-mobile-lanes button[aria-pressed=true] { background:var(--primary); color:var(--primary-foreground); box-shadow:var(--paper-shadow); }
  .folio.folio-expanded .folio-mobile-lanes button[aria-pressed=true] span { color:inherit; }
 }
+
+/* Studio cohesive surface & dark-mode refinement: clean solid surfaces, zero broken cutouts, verified contrast. */
+.folio,
+.folio-detail {
+  --folio-page: #f6f6f1;
+  --folio-compact-bg: #faf8f2;
+  --folio-surface: #ffffff;
+  --folio-surface-done: #f1f2ed;
+  --folio-chip: #e7ebe5;
+  --folio-edge: rgba(23, 36, 30, 0.11);
+  --folio-hairline: rgba(23, 36, 30, 0.09);
+  --folio-ink: #17241e;
+  --folio-muted: #495950;
+  --folio-accent: #1b634c;
+  --folio-wash: #dff0e9;
+  --folio-warn: #854d0e;
+  --folio-warn-bg: #fef3c7;
+  --paper-grain: none;
+  --paper-sheen: none;
+  --paper-control: var(--folio-surface);
+  --paper-control-ink: var(--folio-ink);
+  --paper-primary: var(--folio-accent);
+  --paper-primary-ink: #ffffff;
+  --paper-tag: var(--folio-chip);
+  --paper-tag-selected: var(--folio-wash);
+  --paper-rule: var(--folio-edge);
+  --slip-paper: var(--folio-surface);
+  --slip-paper-alt: var(--folio-surface);
+  --slip-paper-done: var(--folio-surface-done);
+  --sheet-paper: var(--folio-surface);
+  --paper-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --slip-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 6px 16px -6px rgba(15, 23, 42, 0.06);
+  --sheet-shadow: 0 8px 24px -6px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.05);
+  --board-ink: var(--folio-ink);
+  color: var(--folio-ink);
+}
+
+:root[data-theme="dark"] :is(.folio, .folio-detail) {
+  --folio-page: #1d2129;
+  --folio-compact-bg: #242933;
+  --folio-surface: #262c37;
+  --folio-surface-done: #202530;
+  --folio-chip: #303746;
+  --folio-edge: rgba(234, 237, 243, 0.09);
+  --folio-hairline: rgba(234, 237, 243, 0.08);
+  --folio-ink: #eaedf3;
+  --folio-muted: #a3acb9;
+  --folio-accent: #7ce4be;
+  --folio-wash: #1e3832;
+  --folio-warn: #fcd34d;
+  --folio-warn-bg: #382e1b;
+  --paper-grain: none;
+  --paper-sheen: none;
+  --paper-control: var(--folio-surface);
+  --paper-control-ink: var(--folio-ink);
+  --paper-primary: var(--folio-accent);
+  --paper-primary-ink: #0d261e;
+  --paper-tag: var(--folio-chip);
+  --paper-tag-selected: var(--folio-wash);
+  --paper-rule: var(--folio-edge);
+  --slip-paper: var(--folio-surface);
+  --slip-paper-alt: var(--folio-surface);
+  --slip-paper-done: var(--folio-surface-done);
+  --sheet-paper: var(--folio-surface);
+  --paper-shadow: 0 1px 3px rgba(0, 0, 0, 0.24);
+  --slip-shadow: 0 2px 6px rgba(0, 0, 0, 0.22), 0 10px 24px -8px rgba(0, 0, 0, 0.28);
+  --sheet-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.42), 0 4px 10px rgba(0, 0, 0, 0.25);
+  --board-ink: var(--folio-ink);
+  color: var(--folio-ink);
+}
+
+/* Remove jagged cutout tape and bottom-right square notch */
+.folio .folio-pin,
+.folio-detail > .folio-detail-tape {
+  display: none !important;
+}
+
+.folio-card::after {
+  content: none !important;
+}
+
+/* Expanded board polish */
+.folio.folio-expanded,
+:root[data-theme="dark"] .folio.folio-expanded {
+  background-color: var(--folio-page);
+  background-image: none;
+}
+
+.folio.folio-expanded .folio-heading,
+:root[data-theme="dark"] .folio.folio-expanded .folio-heading {
+  transform: none;
+  padding: 0;
+  min-width: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.folio.folio-expanded .folio-heading p,
+:root[data-theme="dark"] .folio.folio-expanded .folio-heading p {
+  color: var(--folio-muted);
+}
+
+.folio.folio-expanded .folio-heading p em {
+  color: var(--folio-warn);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.folio-meter .folio-progress {
+  background-color: var(--folio-chip);
+}
+
+.folio-meter .folio-progress i,
+:root[data-theme="dark"] .folio-meter .folio-progress i {
+  background-color: var(--folio-accent);
+}
+
+.folio.folio-expanded .folio-tools > button,
+.folio.folio-expanded .folio-menu > summary {
+  background-image: none;
+  background-color: var(--folio-surface);
+  color: var(--folio-ink);
+  border: 1px solid var(--folio-edge);
+  border-radius: 10px;
+}
+
+.folio.folio-expanded .folio-tools > button.folio-main-action {
+  background-image: none;
+  background-color: var(--paper-primary);
+  color: var(--paper-primary-ink);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.folio.folio-expanded .folio-layout-switch .button {
+  border-radius: 999px;
+  padding: 5px 14px;
+  color: var(--folio-muted);
+}
+
+.folio.folio-expanded .folio-layout-switch .button[aria-pressed="true"] {
+  background-image: none;
+  background-color: var(--folio-wash);
+  color: var(--folio-accent);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.folio-category-filters .folio-index button,
+:root[data-theme="dark"] .folio-category-filters .folio-index button {
+  min-height: 32px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--folio-edge);
+  background-image: none;
+  background-color: var(--folio-surface);
+  color: var(--folio-muted);
+  box-shadow: none;
+}
+
+.folio-category-filters .folio-index button:hover {
+  color: var(--folio-ink);
+}
+
+.folio-category-filters .folio-index button[aria-pressed="true"],
+.folio-category-filters .folio-index button[data-state="on"],
+:root[data-theme="dark"] .folio-category-filters .folio-index button[aria-pressed="true"],
+:root[data-theme="dark"] .folio-category-filters .folio-index button[data-state="on"] {
+  background-image: none;
+  background-color: var(--folio-wash);
+  color: var(--folio-accent);
+  border-color: transparent;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.folio-index button[aria-pressed="true"]::before {
+  content: none;
+}
+
+.folio.folio-expanded .folio-lane-heading > div,
+:root[data-theme="dark"] .folio.folio-expanded .folio-lane-heading > div {
+  background-image: none;
+  background-color: var(--folio-surface);
+  border: 1px solid var(--folio-edge);
+  border-radius: 999px;
+  padding: 5px 12px 5px 20px;
+  box-shadow: none;
+}
+
+.folio.folio-expanded .folio-lane-heading > div::before {
+  width: 6px;
+  height: 6px;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: var(--folio-muted);
+  box-shadow: none;
+}
+
+.folio.folio-expanded .blocking-lane .folio-lane-heading > div::before {
+  background-color: var(--folio-warn);
+}
+
+.folio.folio-expanded .blocking-lane .folio-lane-heading h2 {
+  color: var(--folio-warn);
+}
+
+.folio.folio-expanded .folio-count,
+:root[data-theme="dark"] .folio.folio-expanded .folio-count {
+  color: var(--folio-muted);
+}
+
+.folio.folio-expanded .folio-card,
+.folio.folio-expanded .folio-card.is-done,
+:root[data-theme="dark"] .folio.folio-expanded .folio-card,
+:root[data-theme="dark"] .folio.folio-expanded .folio-card.is-done {
+  transform: none;
+  padding: 15px 15px 12px;
+  min-height: 0;
+  border: 1px solid var(--folio-edge);
+  border-radius: 12px;
+  background-image: none;
+  background-color: var(--slip-paper);
+  box-shadow: var(--slip-shadow);
+}
+
+.folio.folio-expanded .folio-card.is-done,
+:root[data-theme="dark"] .folio.folio-expanded .folio-card.is-done {
+  background-color: var(--slip-paper-done);
+}
+
+.folio.folio-expanded .folio-card:hover {
+  border-color: color-mix(in srgb, var(--folio-accent) 38%, var(--folio-edge));
+  box-shadow: var(--sheet-shadow);
+}
+
+.folio .folio-open-session,
+:root[data-theme="dark"] .folio .folio-open-session {
+  color: var(--folio-accent);
+}
+
+.folio-item-state,
+:root[data-theme="dark"] .folio-item-state {
+  color: var(--folio-muted);
+}
+
+.folio-item-state.in_progress,
+:root[data-theme="dark"] .folio-item-state.in_progress {
+  color: var(--folio-accent);
+  font-weight: 500;
+}
+
+.folio-item-state.blocking,
+.folio-urgent,
+:root[data-theme="dark"] .folio-item-state.blocking,
+:root[data-theme="dark"] .folio-urgent {
+  color: var(--folio-warn);
+  font-weight: 500;
+}
+
+.folio.folio-expanded .folio-empty {
+  border: 1px dashed var(--folio-edge);
+  border-radius: 12px;
+  padding: 28px 12px;
+  color: var(--folio-muted);
+}
+
+.folio-timeline-scroll,
+.folio-timeline-label,
+.folio-timeline-axis,
+.folio-timeline-group > h3,
+.folio-timeline-bar,
+.folio.folio-expanded .folio-mobile-lanes button {
+  background-image: none !important;
+}
+
+.folio-timeline-group > h3 small {
+  color: var(--folio-ink);
+}
+
+.folio-timeline-scroll {
+  border: 1px solid var(--folio-edge);
+  border-radius: 14px;
+}
+
+.folio-timeline-bar {
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--folio-accent) 42%, transparent);
+  background-color: var(--folio-wash);
+  color: var(--folio-accent);
+  box-shadow: none;
+}
+
+.folio-detail {
+  border: 1px solid var(--folio-edge);
+  border-radius: 16px;
+  background-color: var(--folio-surface);
+}
+
+.folio-detail::backdrop {
+  background-color: rgba(15, 23, 42, 0.36);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+:root[data-theme="dark"] .folio-detail::backdrop {
+  background-color: rgba(8, 10, 15, 0.62);
+}
+
+/* Compact studio card (aligned with adjacent 213px studio cards) */
+.folio-cutout {
+  height: 100dvh;
+  padding: 0;
+  container-type: size;
+}
+
+.folio.folio-compact,
+:root[data-theme="dark"] .folio.folio-compact {
+  position: relative;
+  isolation: isolate;
+  height: 100%;
+  min-height: 0;
+  padding: 0 12px 8px;
+  border: 1px solid var(--folio-edge);
+  border-radius: var(--radius, 16px);
+  background-image: none;
+  background-color: var(--folio-compact-bg);
+  transform: none;
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.folio.folio-compact::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 0%, rgba(255, 255, 255, 0.5), transparent 72%);
+}
+
+:root[data-theme="dark"] .folio.folio-compact::after {
+  background: radial-gradient(115% 85% at 50% 0%, rgba(124, 228, 190, 0.045), transparent 68%);
+}
+
+.folio.folio-compact .folio-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  gap: 8px;
+}
+
+.folio.folio-compact .folio-compact-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  color: var(--folio-ink);
+}
+
+.folio.folio-compact .folio-compact-open svg {
+  flex: none;
+  color: var(--folio-accent);
+}
+
+.folio.folio-compact h1 {
+  margin: 0;
+  font-family: "Songti SC", "Noto Serif CJK SC", Georgia, serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.folio.folio-compact .folio-percent {
+  padding: 0;
+  font: 600 13px/1.2 var(--font-family, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  color: var(--folio-accent);
+}
+
+.folio.folio-compact .folio-percent small {
+  font: inherit;
+  font-size: 12px;
+  margin-left: 1px;
+}
+
+.folio.folio-compact .folio-percent-empty {
+  font-size: 12px;
+  color: var(--folio-muted);
+}
+
+.folio.folio-compact .folio-progress {
+  height: 2px;
+  margin: 0;
+  border-radius: 999px;
+  background-color: var(--folio-hairline);
+  box-shadow: none;
+}
+
+.folio.folio-compact .folio-progress i {
+  border-radius: 999px;
+  background-color: var(--folio-accent);
+}
+
+.folio.folio-compact .folio-mini-list {
+  display: flex;
+  flex: 1 1 0px;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  margin: 7px 0 4px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.folio.folio-compact .folio-mini-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 0;
+  background-color: var(--folio-surface);
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.folio.folio-compact .folio-mini-row:nth-child(n + 2),
+.folio.folio-compact .folio-mini-row:nth-child(n + 3) {
+  display: flex;
+}
+
+.folio.folio-compact .folio-mini-row:nth-child(n + 4) {
+  display: none;
+}
+
+.folio-mini-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--folio-muted);
+}
+
+.folio-mini-dot.in_progress {
+  background-color: var(--folio-accent);
+}
+
+.folio-mini-dot.blocking {
+  background-color: var(--folio-warn);
+}
+
+.folio.folio-compact .folio-mini-title {
+  -webkit-line-clamp: 1;
+  font-size: 12.5px;
+  line-height: 1.4;
+  font-weight: 500;
+  color: var(--folio-ink);
+}
+
+.folio.folio-compact .folio-mini-blocked {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background-color: var(--folio-warn-bg);
+  color: var(--folio-warn);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.folio.folio-compact .folio-mini-session {
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  color: var(--folio-accent);
+}
+
+.folio.folio-compact .folio-mini-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 2px;
+  font-size: 12px;
+  color: var(--folio-muted);
+}
+
+.folio-mini-footer-warn {
+  color: var(--folio-warn);
+  font-style: normal;
+  font-weight: 500;
+}
+
+.folio.folio-compact .folio-mini-footer > .button {
+  min-height: 26px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background-color: var(--folio-wash);
+  color: var(--folio-accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+@media (pointer: coarse), (max-width: 680px) {
+  .folio-category-filters .folio-index button,
+  :root[data-theme="dark"] .folio-category-filters .folio-index button {
+    min-height: 42px;
+    padding: 6px 14px;
+  }
+}
+
+@media (pointer: coarse) {
+  .folio.folio-compact .folio-header {
+    height: 40px;
+  }
+  .folio.folio-compact .folio-compact-open {
+    min-height: 40px;
+  }
+  .folio.folio-compact .folio-mini-row {
+    min-height: 40px;
+  }
+  .folio.folio-compact .folio-mini-row:nth-child(n + 3) {
+    display: none;
+  }
+  .folio.folio-compact .folio-mini-session {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+  .folio.folio-compact .folio-mini-footer > .button {
+    min-height: 40px;
+    height: 40px;
+    padding: 0 12px;
+  }
+}
