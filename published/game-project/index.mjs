@@ -416,7 +416,8 @@ function homeRecords(kind, rows, isUsed) {
   } else if (kind === "media") {
     const sample = (matches) => rows.find((r) => matches(r) && isUsed?.(r)) ?? rows.find(matches);
     const portrait = sample((r) => r.group === "人设" || r.group === "立绘"), background = sample((r) => r.group === "背景"), sound = sample(audio);
-    records = [...new Set([portrait, background, sound, ...rows].filter((r) => !!r))].slice(0, 3);
+    const featured = [portrait, background, sound].filter((r) => !!r);
+    records = [...new Set([...featured, ...rows.filter((row) => isUsed?.(row)), ...rows])].slice(0, 3);
   } else {
     const focus = (kind === "map" ? rows.find((r) => r.diagram?.length) : kind === "encounter" ? rows.find((r) => r.portraits?.some((p) => p.mediaKey || p.thumbnail)) : rows.find((r) => r.mediaKey || r.thumbnail)) || rows[0];
     if (focus) {
