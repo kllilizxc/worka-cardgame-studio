@@ -40,14 +40,16 @@ function assetType(path,meta) {
   if(/background|backdrop|场景|背景|exterior|interior|clearing|\/bg[._/]/i.test(path+' '+meta))return '背景';
   return '素材图';
 }
-export function buildCatalog(root,{hashCache,gitCache}={}){
+export function buildCatalog(root,{hashCache,gitCache,gitSnapshot}={}){
   const rows=Object.fromEntries(kinds.map(k=>[k,new Map()]));
-  const head=git(root,'rev-parse','HEAD');
+  const head=gitSnapshot?.head??git(root,'rev-parse','HEAD');
   let base='',tracked=new Map();
   if(gitCache&&gitCache.head===head){base=gitCache.base;tracked=gitCache.tracked;}
   else{
-    const remote=git(root,'config','--get','remote.origin.url').match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
-    tracked=new Map(git(root,'ls-tree','-rz','HEAD','--','public','art-references').split('\0').flatMap(line=>{
+    const origin=gitSnapshot?.origin??git(root,'config','--get','remote.origin.url');
+    const remote=origin.match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
+    const tree=gitSnapshot?.tree??git(root,'ls-tree','-rz','HEAD','--','public','art-references');
+    tracked=new Map(tree.split('\0').flatMap(line=>{
       const match=/^100\d+ blob ([a-f0-9]+)\t([\s\S]+)$/.exec(line);return match?[[match[2],match[1]]]:[];
     }));
     base=remote&&head?'https://raw.githubusercontent.com/'+remote[1]+'/'+remote[2]+'/'+head+'/':'';

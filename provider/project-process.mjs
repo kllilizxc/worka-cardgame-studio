@@ -1,22 +1,26 @@
 import { EventEmitter } from 'node:events';
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { fileURLToPath } from 'node:url';
 
 const workerFile = fileURLToPath(new URL('./project-worker.mjs', import.meta.url));
+export const projectWorkspace = dataRoot => join(dataRoot, 'providers', 'game-project');
 const errorFrom = value => Object.assign(new Error(value?.message ?? 'Project process failed'), value?.code ? { code: value.code } : {});
+
+export function subscribe(stream, callback, onError) {
+  if (stream?.onData) return stream.onData(callback);
+  if (!stream?.on) throw Error('Project process stream is unavailable');
+  stream.on('data', callback);
+  stream.on('error', onError);
+  return () => { const off = stream.off ?? stream.removeListener; off?.call(stream, 'data', callback); off?.call(stream, 'error', onError); };
+}
 
 /** One managed process owns external project I/O. No request is replayed. */
 export function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024 * 1024, entry = workerFile } = {}) {
   if (!Number.isInteger(maxPending) || maxPending < 1 || !Number.isInteger(maxFrameBytes) || maxFrameBytes < 1) throw new TypeError('Invalid project process limits');
   let current, retired = Promise.resolve(), closed = false, sequence = 0;
   const pending = new Map(), watches = new Map();
-  const subscribe = (stream, callback, onError) => {
-    if (stream?.onData) return stream.onData(callback);
-    if (!stream?.on) throw Error('Project process stream is unavailable');
-    stream.on('data', callback);
-    stream.on('error', onError);
-    return () => { const off = stream.off ?? stream.removeListener; off?.call(stream, 'data', callback); off?.call(stream, 'error', onError); };
-  };
   function finish(id, error, value) {
     const call = pending.get(id);
     if (!call) return;
@@ -58,7 +62,9 @@ export function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32
       if (closed || generation.failed) throw Error('Project process is closed');
       const spawn = host?.runtime?.subprocess?.spawn;
       if (!spawn) throw Error('Managed project process is unavailable');
-      const process = await spawn.call(host.runtime.subprocess, { command: globalThis.process.execPath, args: [entry], cwd: host.dataRoot, env: { NODE_OPTIONS: '' } });
+      const cwd = projectWorkspace(host.dataRoot);
+      await mkdir(cwd, {recursive: true});
+      const process = await spawn.call(host.runtime.subprocess, { command: globalThis.process.execPath, args: [entry], cwd, env: { NODE_OPTIONS: '' } });
       generation.process = process;
       let buffer = '', decoder = new StringDecoder('utf8');
       generation.stops.push(subscribe(process.stdout, chunk => {
@@ -96,14 +102,7 @@ export function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32
     if (pending.size >= maxPending) return Promise.reject(Error('Project process is busy'));
     const generation = start(), id = ++sequence;
     return new Promise((resolve, reject) => {
-      const checkout = method === 'checkout';
-      let sent = false;
-      const abort = () => {
-        if (!checkout) { fail(generation, signal.reason); return; }
-        if (!sent) { finish(id, signal.reason); return; }
-        void generation.process.stdin.write(JSON.stringify({ cancel: id }) + '\n')
-          .catch(error => fail(generation, error));
-      };
+      const abort = () => { fail(generation, signal.reason); };
       pending.set(id, { generation, resolve, reject, signal, abort });
       signal?.addEventListener('abort', abort, { once: true });
       if (signal?.aborted) abort();
@@ -111,7 +110,6 @@ export function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32
         if (!pending.has(id) || generation.failed) return;
         const frame = JSON.stringify({ id, method, args }) + '\n';
         if (Buffer.byteLength(frame) > maxFrameBytes) { finish(id, Error('Project request frame exceeds limit')); return; }
-        sent = true;
         await process.stdin.write(frame);
       }).catch(error => { fail(generation, error); });
     });

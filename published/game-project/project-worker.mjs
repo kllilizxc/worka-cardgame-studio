@@ -1,11 +1,9 @@
 // provider/project-worker.mjs
 import { createHash as createHash2 } from "node:crypto";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { createRequire } from "node:module";
 import { watch } from "node:fs";
-import { access, mkdir, mkdtemp, readFile as readFile2, realpath as realpath2, rename, rm, stat } from "node:fs/promises";
-import { dirname as dirname2, extname as extname2, isAbsolute, join as join3, relative as relative2, sep as sep2 } from "node:path";
+import { access, readFile as readFile2, realpath as realpath2, stat } from "node:fs/promises";
+import { extname as extname2, isAbsolute, join as join3, relative as relative2, sep as sep2 } from "node:path";
 import { createInterface } from "node:readline";
 
 // tools/catalog-index.mjs
@@ -63,16 +61,18 @@ function assetType(path, meta) {
     return "背景";
   return "素材图";
 }
-function buildCatalog(root, { hashCache, gitCache } = {}) {
+function buildCatalog(root, { hashCache, gitCache, gitSnapshot } = {}) {
   const rows = Object.fromEntries(kinds.map((k) => [k, new Map]));
-  const head = git(root, "rev-parse", "HEAD");
+  const head = gitSnapshot?.head ?? git(root, "rev-parse", "HEAD");
   let base = "", tracked = new Map;
   if (gitCache && gitCache.head === head) {
     base = gitCache.base;
     tracked = gitCache.tracked;
   } else {
-    const remote = git(root, "config", "--get", "remote.origin.url").match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
-    tracked = new Map(git(root, "ls-tree", "-rz", "HEAD", "--", "public", "art-references").split("\x00").flatMap((line) => {
+    const origin = gitSnapshot?.origin ?? git(root, "config", "--get", "remote.origin.url");
+    const remote = origin.match(/^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i);
+    const tree = gitSnapshot?.tree ?? git(root, "ls-tree", "-rz", "HEAD", "--", "public", "art-references");
+    tracked = new Map(tree.split("\x00").flatMap((line) => {
       const match = /^100\d+ blob ([a-f0-9]+)\t([\s\S]+)$/.exec(line);
       return match ? [[match[2], match[1]]] : [];
     }));
@@ -487,7 +487,6 @@ async function buildStory(gameRoot) {
 
 // provider/project-worker.mjs
 var digest = (value) => createHash2("sha256").update(value).digest("hex");
-var run = promisify(execFile);
 function contained(root, file) {
   const part = relative2(root, file);
   if (isAbsolute(part) || part === ".." || part.startsWith(".." + sep2))
@@ -496,57 +495,6 @@ function contained(root, file) {
 }
 async function inside2(root, path) {
   return contained(root, await realpath2(join3(root, path)));
-}
-function regularRemote(value) {
-  const url = new URL(value);
-  if (url.protocol !== "https:" || url.hostname !== "github.com" || url.port || url.username || url.password || url.search || url.hash || !/^\/[a-z\d_.-]+\/[a-z\d_.-]+\/?$/i.test(url.pathname))
-    throw Error("请提供本机绝对路径或不含凭据的 HTTPS GitHub 仓库地址");
-  return url.origin + url.pathname.replace(/\/$/, "").replace(/\.git$/, "") + ".git";
-}
-async function git2(args, signal) {
-  const result = await run("git", ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (process.platform === "win32" ? "NUL" : "/dev/null"), ...args], { signal, encoding: "utf8", maxBuffer: 4 * 1024 * 1024, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1" } });
-  return result.stdout.trim();
-}
-async function checkout(source, dir, signal) {
-  if (isAbsolute(source)) {
-    const root = await realpath2(source);
-    if (await realpath2(await git2(["-C", root, "rev-parse", "--show-toplevel"], signal)) !== root)
-      throw Error("请选择 Git 工作树的根目录");
-    return root;
-  }
-  const url = regularRemote(source), managed = join3(dir, "repos", digest(url));
-  await mkdir(dirname2(managed), { recursive: true });
-  try {
-    await access(managed);
-    if (await git2(["-C", managed, "config", "--get", "remote.origin.url"], signal) !== url)
-      throw Error("已有托管检出的来源不匹配");
-    return await realpath2(managed);
-  } catch (err) {
-    if (err.code !== "ENOENT")
-      throw err;
-  }
-  signal?.throwIfAborted();
-  const temp = await mkdtemp(join3(dirname2(managed), ".clone-"));
-  try {
-    try {
-      await git2(["clone", "--no-checkout", "--no-recurse-submodules", "--", url, temp], signal);
-      const names = await git2(["-C", temp, "config", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|smudge|process|required)$"], signal).catch((error) => {
-        if (error.code === 1)
-          return "";
-        throw error;
-      });
-      const overrides = names.split(/\r?\n/).filter(Boolean).flatMap((key) => ["-c", key + (key.endsWith(".required") ? "=false" : "=")]);
-      await git2(["-C", temp, ...overrides, "-c", "submodule.recurse=false", "checkout", "--force", "HEAD", "--", "."], signal);
-    } catch (error) {
-      signal?.throwIfAborted();
-      throw Error("无法获取游戏仓库，请确认本机 Git 可以访问该地址。");
-    }
-    signal?.throwIfAborted();
-    await rename(temp, managed);
-  } finally {
-    await rm(temp, { recursive: true, force: true });
-  }
-  return await realpath2(managed);
 }
 var formats = {
   ".png": "image/png",
@@ -622,10 +570,22 @@ var send = (value) => process.stdout.write(JSON.stringify(value) + `
 `);
 var errorValue = (error) => ({ message: String(error?.message || error), ...typeof error?.code === "string" ? { code: error.code } : {} });
 var operations = {
-  checkout,
+  async resolveRoot(source, top) {
+    const root = await realpath2(source);
+    if (await realpath2(top) !== root)
+      throw Error("请选择 Git 工作树的根目录");
+    return root;
+  },
   async validate(root) {
-    for (const path of ["public", "public/data", "knowledge", "public/data/content-catalog.json", "knowledge/index.md"])
-      await inside2(root, path);
+    for (const path of ["public", "public/data", "knowledge", "public/data/content-catalog.json", "knowledge/index.md"]) {
+      try {
+        await inside2(root, path);
+      } catch (error) {
+        if (error.code !== "ENOENT")
+          throw error;
+        throw Error(`当前 CardGame 检出缺少 ${path}。请选择包含剧情和内容索引的检出，或更新当前分支后重试。`, { cause: error });
+      }
+    }
     for (const path of ["public/assets", "public/assets/asset-manifest.json", "art-references"]) {
       try {
         await inside2(root, path);
@@ -635,20 +595,20 @@ var operations = {
       }
     }
     caches.delete(root);
-    return git2(["-C", root, "rev-parse", "--verify", "HEAD^{commit}"]);
+    return true;
   },
-  async status(root, commit) {
+  async status(root) {
     await access(await inside2(root, "public/data/content-catalog.json"));
     await access(await inside2(root, "knowledge/index.md"));
-    return git2(["-C", root, "rev-parse", "--verify", "HEAD^{commit}"]).catch(() => commit || "");
+    return true;
   },
-  async build(root) {
+  async build(root, gitSnapshot) {
     let cache = caches.get(root);
     if (!cache) {
       cache = { hashCache: new Map, gitCache: {} };
       caches.set(root, cache);
     }
-    const [story, catalog] = await Promise.all([buildStory(root), Promise.resolve().then(() => buildCatalog(root, cache))]);
+    const [story, catalog] = await Promise.all([buildStory(root), Promise.resolve().then(() => buildCatalog(root, { ...cache, gitSnapshot }))]);
     return { story, catalog, links: catalogLinks(catalog) };
   },
   document,
@@ -676,7 +636,6 @@ var operations = {
     return true;
   }
 };
-var checkouts = new Map;
 var input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on("line", (line) => {
   let request;
@@ -687,23 +646,14 @@ input.on("line", (line) => {
     input.close();
     return;
   }
-  if (typeof request.cancel === "number") {
-    checkouts.get(request.cancel)?.abort(Error("已取消获取游戏仓库。"));
-    return;
-  }
   const { id, method, args } = request;
-  const controller = method === "checkout" ? new AbortController : undefined;
-  if (controller)
-    checkouts.set(id, controller);
   Promise.resolve().then(() => {
     if (!Object.hasOwn(operations, method) || !Array.isArray(args))
       throw Error("Unknown project operation");
-    return controller ? checkout(args[0], args[1], controller.signal) : operations[method](...args);
-  }).then((result) => send({ id, result }), (error) => send({ id, error: errorValue(error) })).finally(() => checkouts.delete(id));
+    return operations[method](...args);
+  }).then((result) => send({ id, result }), (error) => send({ id, error: errorValue(error) }));
 });
 input.on("close", () => {
-  for (const controller of checkouts.values())
-    controller.abort(Error("Project process closed"));
   for (const watcher of watchers.values())
     watcher.close();
   watchers.clear();

@@ -165,6 +165,24 @@ test('live paginated reads, fs.watch invalidation, note-session callers, and liv
   }
 });
 
+test('binding reports the missing project content and keeps the previous checkout',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'cardgame-incomplete-bind-'));
+  try{
+    const {game,host}=await createFixture(root),provider=gameProject(host);
+    try{
+      const caller={kind:'user'};
+      await runBind(provider,{source:game},caller);
+      const incomplete=join(root,'older-checkout');
+      await mkdir(join(incomplete,'public/data'),{recursive:true});
+      git(incomplete,'init','-q','-b','main');
+      await assert.rejects(runBind(provider,{source:incomplete},caller),/缺少 knowledge.*更新当前分支后重试/);
+      const status=await provider.resources.status.load({},ctx('one-cards'));
+      assert.equal(status.ready,true);
+      assert.equal(status.root,await realpath(game));
+    }finally{await provider.close();}
+  }finally{await rm(root,{recursive:true,force:true});}
+});
+
 test('worktree branch commit and OK merge into main push to remote and update bound live reads',async()=>{
   const root=await mkdtemp(join(tmpdir(),'live-branch-merge-'));
   try{
@@ -358,21 +376,11 @@ test('a cancelled clone clears its temporary checkout and a later bind can proce
   const root = await mkdtemp(join(tmpdir(), 'cardgame-clone-cancel-'));
   try {
     const {game,host} = await createFixture(root);
-    const bin=join(root,'bin'), marker=join(root,'git-started');
-    const realGit=execFileSync('which',['git'],{encoding:'utf8'}).trim();
-    await mkdir(bin);
-    await writeFile(join(bin,'git'),`#!${process.execPath}
-const {writeFileSync}=require('node:fs');
-const {spawnSync}=require('node:child_process');
-if(process.argv.includes('clone')){
-  writeFileSync(${JSON.stringify(marker)},String(process.pid));
-  setInterval(()=>{},1000);
-}else{
-  const result=spawnSync(${JSON.stringify(realGit)},process.argv.slice(2),{stdio:'inherit'});
-  process.exit(result.status??1);
-}
-`,{mode:0o700});
-    host.runtime.subprocess={spawn:spec=>testSubprocess.spawn({...spec,env:{...spec.env,PATH:`${bin}:${process.env.PATH}`}})};
+    const marker=join(root,'git-started');
+    const standIn=`require('node:fs').writeFileSync(${JSON.stringify(marker)}, String(process.pid)); setInterval(() => {}, 1000);`;
+    host.runtime.subprocess={spawn:spec=>testSubprocess.spawn(spec.command==='git' && spec.args.includes('clone')
+      ? {...spec,command:process.execPath,args:['-e',standIn]}
+      : spec)};
     const provider=gameProject(host);
     try {
       const controller=new AbortController();

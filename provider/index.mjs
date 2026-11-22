@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {join,sep} from 'node:path';
-import {createProjectProcess} from './project-process.mjs';
+import {createProjectProcess,projectWorkspace} from './project-process.mjs';
+import {createProjectGit} from './project-git.mjs';
 import {search} from '../notes/catalog/search.ts';
 import {homeRecords} from '../notes/catalog/home.ts';
 import {ancestors,storyTree} from '../notes/story/story-tree.ts';
@@ -67,10 +68,11 @@ function excerpt(text='',fallback=''){
 
 export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}){
   const project=createProjectProcess(host,processOptions),watch=watchOverride??project.watch;
+  const git=createProjectGit(host,project);
   const app=host.app,pending=new Map(),roots=new Map(),desktopRoots=new Map();
   const stopping=new AbortController();
   let closing=false;
-  function directory(id){return join(host.dataRoot,'providers',name,digest(id));}
+  function directory(id){return join(projectWorkspace(host.dataRoot),digest(id));}
   async function readDesktopBinding(id){
     const b=await binding(app,id);
     if(b?.root)desktopRoots.set(id,b.root);else desktopRoots.delete(id);
@@ -79,7 +81,8 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
 
   async function computeProjection(root){
     onBuild?.(root);
-    const {story,catalog,links:edges}=await project.request('build',[root]);
+    const gitSnapshot=await git.snapshot(root,stopping.signal);
+    const {story,catalog,links:edges}=await project.request('build',[root,gitSnapshot]);
     const catalogByKind=Object.fromEntries(catalogKinds.map(k=>[k,catalog[k].initialConfig.records]));
     const catalogMap=Object.fromEntries(catalogKinds.map(k=>[k,new Map(catalogByKind[k].map(r=>[r.id,r]))]));
     const scenes=story.initialConfig.storyIndex;
@@ -256,7 +259,8 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
     }
     if(!b?.root)return {configured:false,ready:false,message:b?.message??missingMessage};
     try{
-      const commit=await project.request('status',[b.root,b.commit],ctx.signal);
+      await project.request('status',[b.root],ctx.signal);
+      const commit=await git.head(b.root,ctx.signal).catch(()=>b.commit);
       return {ready:true,configured:true,verifiedAt:b.verifiedAt,label:'游戏仓库',root:b.root,...(commit?{commit}:{})};
     }catch{
       return {configured:false,ready:false,message:'无法读取已绑定的游戏目录。'+missingMessage};
@@ -272,7 +276,7 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
     const op=input?.op||'page';
     if(op==='overview')return {count:rows.length,items:rows.slice(0,3).map(r=>r.title)};
     if(op==='home'){
-      const home=homeRecords(kind,rows);
+      const home=homeRecords(kind,rows,row=>data.linksBySource.has(kind+'\0'+row.id));
       const linksOf=await linkResolver(id,noteId,kind,data);
       return {...home,records:home.records.map(row=>({...row,links:linksOf(row.id)}))};
     }
@@ -397,8 +401,9 @@ export function gameProject(host,{onBuild,watch:watchOverride,processOptions}={}
     await app.core.writeRecord('states',recordKey(id),{...prior,job:{id:executionId,message}});
     let root,commit;
     try{
-      root=await project.request('checkout',[origin,dir],signal);
-      commit=await project.request('validate',[root],signal);
+      root=await git.checkout(origin,dir,signal);
+      await project.request('validate',[root],signal);
+      commit=await git.head(root,signal);
       signal.throwIfAborted();
     }catch(error){
       const {job:_job,...previous}=prior??{};

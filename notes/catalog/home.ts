@@ -7,7 +7,7 @@ function cap(row:RecordRow):RecordRow{
     refs:row.refs.slice(0,8),fields:row.fields.slice(0,12),diagram:row.diagram?.slice(0,7)};
 }
 /** Select a bounded record preview. IDs still navigate to the unchanged full index. */
-export function homeRecords(kind:Kind,rows:RecordRow[]){
+export function homeRecords(kind:Kind,rows:RecordRow[],isUsed?:(row:RecordRow)=>boolean){
   let records:RecordRow[]=[];
   if(kind==='cards'){
     const cards=rows.filter(r=>r.group!=='牌组');
@@ -18,7 +18,8 @@ export function homeRecords(kind:Kind,rows:RecordRow[]){
     const pictured=pool.filter(r=>r.mediaKey||r.thumbnail),plain=pool.filter(r=>!r.mediaKey&&!r.thumbnail);
     records=[...(deck?[deck]:[]),...[...pictured,...plain].slice(0,6)];
   }else if(kind==='media'){
-    const portrait=rows.find(r=>r.group==='人设'||r.group==='立绘'),background=rows.find(r=>r.group==='背景'),sound=rows.find(audio);
+    const sample=(matches:(row:RecordRow)=>boolean)=>rows.find(r=>matches(r)&&isUsed?.(r))??rows.find(matches);
+    const portrait=sample(r=>r.group==='人设'||r.group==='立绘'),background=sample(r=>r.group==='背景'),sound=sample(audio);
     records=[...new Set([portrait,background,sound,...rows].filter((r):r is RecordRow=>!!r))].slice(0,3);
   }else{
     const focus=(kind==='map'?rows.find(r=>r.diagram?.length):kind==='encounter'?rows.find(r=>r.portraits?.some(p=>p.mediaKey||p.thumbnail)):rows.find(r=>r.mediaKey||r.thumbnail))||rows[0];

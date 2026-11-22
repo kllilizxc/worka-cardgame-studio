@@ -1,31 +1,34 @@
 // provider/index.mjs
-import { createHash } from "node:crypto";
-import { join, sep } from "node:path";
+import { createHash as createHash2 } from "node:crypto";
+import { join as join3, sep } from "node:path";
 
 // provider/project-process.mjs
 import { EventEmitter } from "node:events";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 import { fileURLToPath } from "node:url";
 var workerFile = fileURLToPath(new URL("./project-worker.mjs", import.meta.url));
+var projectWorkspace = (dataRoot) => join(dataRoot, "providers", "game-project");
 var errorFrom = (value) => Object.assign(new Error(value?.message ?? "Project process failed"), value?.code ? { code: value.code } : {});
+function subscribe(stream, callback, onError) {
+  if (stream?.onData)
+    return stream.onData(callback);
+  if (!stream?.on)
+    throw Error("Project process stream is unavailable");
+  stream.on("data", callback);
+  stream.on("error", onError);
+  return () => {
+    const off = stream.off ?? stream.removeListener;
+    off?.call(stream, "data", callback);
+    off?.call(stream, "error", onError);
+  };
+}
 function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024 * 1024, entry = workerFile } = {}) {
   if (!Number.isInteger(maxPending) || maxPending < 1 || !Number.isInteger(maxFrameBytes) || maxFrameBytes < 1)
     throw new TypeError("Invalid project process limits");
   let current, retired = Promise.resolve(), closed = false, sequence = 0;
   const pending = new Map, watches = new Map;
-  const subscribe = (stream, callback, onError) => {
-    if (stream?.onData)
-      return stream.onData(callback);
-    if (!stream?.on)
-      throw Error("Project process stream is unavailable");
-    stream.on("data", callback);
-    stream.on("error", onError);
-    return () => {
-      const off = stream.off ?? stream.removeListener;
-      off?.call(stream, "data", callback);
-      off?.call(stream, "error", onError);
-    };
-  };
   function finish(id, error, value) {
     const call = pending.get(id);
     if (!call)
@@ -87,7 +90,9 @@ function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024
       const spawn = host?.runtime?.subprocess?.spawn;
       if (!spawn)
         throw Error("Managed project process is unavailable");
-      const process = await spawn.call(host.runtime.subprocess, { command: globalThis.process.execPath, args: [entry], cwd: host.dataRoot, env: { NODE_OPTIONS: "" } });
+      const cwd = projectWorkspace(host.dataRoot);
+      await mkdir(cwd, { recursive: true });
+      const process = await spawn.call(host.runtime.subprocess, { command: globalThis.process.execPath, args: [entry], cwd, env: { NODE_OPTIONS: "" } });
       generation.process = process;
       let buffer = "", decoder = new StringDecoder("utf8");
       generation.stops.push(subscribe(process.stdout, (chunk) => {
@@ -155,19 +160,8 @@ function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024
       return Promise.reject(Error("Project process is busy"));
     const generation = start(), id = ++sequence;
     return new Promise((resolve, reject) => {
-      const checkout = method === "checkout";
-      let sent = false;
       const abort = () => {
-        if (!checkout) {
-          fail(generation, signal.reason);
-          return;
-        }
-        if (!sent) {
-          finish(id, signal.reason);
-          return;
-        }
-        generation.process.stdin.write(JSON.stringify({ cancel: id }) + `
-`).catch((error) => fail(generation, error));
+        fail(generation, signal.reason);
       };
       pending.set(id, { generation, resolve, reject, signal, abort });
       signal?.addEventListener("abort", abort, { once: true });
@@ -182,7 +176,6 @@ function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024
           finish(id, Error("Project request frame exceeds limit"));
           return;
         }
-        sent = true;
         await process.stdin.write(frame);
       }).catch((error) => {
         fail(generation, error);
@@ -239,6 +232,118 @@ function createProjectProcess(host, { maxPending = 16, maxFrameBytes = 32 * 1024
     await retired;
   }
   return { request, watch, close };
+}
+
+// provider/project-git.mjs
+import { createHash } from "node:crypto";
+import { access, mkdir as mkdir2, mkdtemp, realpath, rename, rm } from "node:fs/promises";
+import { dirname, isAbsolute, join as join2 } from "node:path";
+import { finished } from "node:stream/promises";
+function githubRemote(value) {
+  const url = new URL(value);
+  if (url.protocol !== "https:" || url.hostname !== "github.com" || url.port || url.username || url.password || url.search || url.hash || !/^\/[a-z\d_.-]+\/[a-z\d_.-]+\/?$/i.test(url.pathname)) {
+    throw Error("请提供本机绝对路径或不含凭据的 HTTPS GitHub 仓库地址");
+  }
+  return url.origin + url.pathname.replace(/\/$/, "").replace(/\.git$/, "") + ".git";
+}
+function createProjectGit(host, project) {
+  const cwd = projectWorkspace(host.dataRoot);
+  async function run(args, signal, allowedExit = [0]) {
+    signal?.throwIfAborted();
+    await mkdir2(cwd, { recursive: true });
+    const process = await host.runtime.subprocess.spawn({
+      command: "git",
+      args: ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=" + (globalThis.process.platform === "win32" ? "NUL" : "/dev/null"), ...args],
+      cwd,
+      env: { GIT_TERMINAL_PROMPT: "0", GIT_LFS_SKIP_SMUDGE: "1", GIT_CONFIG_COUNT: "0" }
+    });
+    let stop, failure, bytes = 0;
+    const end = (error) => {
+      failure ??= error;
+      stop ??= Promise.resolve().then(() => process.kill());
+      stop.catch(() => {});
+    };
+    const abort = () => end(signal.reason);
+    const chunks = [];
+    const stdout = subscribe(process.stdout, (chunk) => {
+      if (failure)
+        return;
+      const data = Buffer.from(chunk);
+      bytes += data.length;
+      if (bytes > 64 * 1024 * 1024)
+        end(Error("Git 返回的数据过多"));
+      else
+        chunks.push(data);
+    }, end);
+    const stderr = process.stderr ? subscribe(process.stderr, () => {}, end) : () => {};
+    const drained = process.stdout.on ? finished(process.stdout, { cleanup: true }) : Promise.resolve();
+    drained.catch(end);
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted)
+      abort();
+    try {
+      process.stdin?.end?.();
+      const result = await process.wait();
+      await drained;
+      await stop;
+      if (failure)
+        throw failure;
+      const code = result.exitCode ?? result.code;
+      if (!allowedExit.includes(code))
+        throw Error("Git 命令失败（退出码 " + code + "）");
+      return Buffer.concat(chunks).toString("utf8").trimEnd();
+    } finally {
+      signal?.removeEventListener("abort", abort);
+      stdout();
+      stderr();
+    }
+  }
+  async function checkout(source, directory, signal) {
+    if (isAbsolute(source)) {
+      const top = await run(["-C", source, "rev-parse", "--show-toplevel"], signal);
+      return project.request("resolveRoot", [source, top], signal);
+    }
+    const url = githubRemote(source);
+    const managed = join2(directory, "repos", createHash("sha256").update(url).digest("hex"));
+    await mkdir2(dirname(managed), { recursive: true });
+    try {
+      await access(managed);
+      if (await run(["-C", managed, "config", "--get", "remote.origin.url"], signal) !== url)
+        throw Error("已有托管检出的来源不匹配");
+      return await realpath(managed);
+    } catch (error) {
+      if (error.code !== "ENOENT")
+        throw error;
+    }
+    signal?.throwIfAborted();
+    const temp = await mkdtemp(join2(dirname(managed), ".clone-"));
+    try {
+      try {
+        await run(["clone", "--no-checkout", "--no-recurse-submodules", "--", url, temp], signal);
+        const names = await run(["-C", temp, "config", "--name-only", "--get-regexp", "^filter\\..*\\.(clean|smudge|process|required)$"], signal, [0, 1]);
+        const overrides = names.split(/\r?\n/).filter(Boolean).flatMap((key) => ["-c", key + (key.endsWith(".required") ? "=false" : "=")]);
+        await run(["-C", temp, ...overrides, "-c", "submodule.recurse=false", "checkout", "--force", "HEAD", "--", "."], signal);
+      } catch {
+        signal?.throwIfAborted();
+        throw Error("无法获取游戏仓库，请确认本机 Git 可以访问该地址。");
+      }
+      signal?.throwIfAborted();
+      await rename(temp, managed);
+    } finally {
+      await rm(temp, { recursive: true, force: true });
+    }
+    return realpath(managed);
+  }
+  const head = (root, signal) => run(["-C", root, "rev-parse", "--verify", "HEAD^{commit}"], signal);
+  async function snapshot(root, signal) {
+    const commit = await head(root, signal);
+    const [origin, tree] = await Promise.all([
+      run(["-C", root, "config", "--get", "remote.origin.url"], signal, [0, 1]),
+      run(["-C", root, "ls-tree", "-rz", commit, "--", "public", "art-references"], signal)
+    ]);
+    return { head: commit, origin, tree };
+  }
+  return { checkout, head, snapshot };
 }
 
 // notes/catalog/search.ts
@@ -298,7 +403,7 @@ function cap(row) {
     diagram: row.diagram?.slice(0, 7)
   };
 }
-function homeRecords(kind, rows) {
+function homeRecords(kind, rows, isUsed) {
   let records = [];
   if (kind === "cards") {
     const cards = rows.filter((r) => r.group !== "牌组");
@@ -309,7 +414,8 @@ function homeRecords(kind, rows) {
     const pictured = pool.filter((r) => r.mediaKey || r.thumbnail), plain = pool.filter((r) => !r.mediaKey && !r.thumbnail);
     records = [...deck ? [deck] : [], ...[...pictured, ...plain].slice(0, 6)];
   } else if (kind === "media") {
-    const portrait = rows.find((r) => r.group === "人设" || r.group === "立绘"), background = rows.find((r) => r.group === "背景"), sound = rows.find(audio);
+    const sample = (matches) => rows.find((r) => matches(r) && isUsed?.(r)) ?? rows.find(matches);
+    const portrait = sample((r) => r.group === "人设" || r.group === "立绘"), background = sample((r) => r.group === "背景"), sound = sample(audio);
     records = [...new Set([portrait, background, sound, ...rows].filter((r) => !!r))].slice(0, 3);
   } else {
     const focus = (kind === "map" ? rows.find((r) => r.diagram?.length) : kind === "encounter" ? rows.find((r) => r.portraits?.some((p) => p.mediaKey || p.thumbnail)) : rows.find((r) => r.mediaKey || r.thumbnail)) || rows[0];
@@ -361,7 +467,7 @@ var name = "game-project";
 var inject = ["worka"];
 var catalogKinds = ["map", "encounter", "cards", "monsters", "people", "shop", "media"];
 var contentKinds = ["story", ...catalogKinds];
-var digest = (value) => createHash("sha256").update(value).digest("hex");
+var digest = (value) => createHash2("sha256").update(value).digest("hex");
 var defaultRepo = "https://github.com/kllilizxc/CardGame";
 var missingMessage = "请选择游戏来源：使用默认仓库，或选择本机已检出的 CardGame 目录。";
 var recordKey = (id) => "cardgame.project/" + digest(id);
@@ -422,11 +528,12 @@ function excerpt(text = "", fallback = "") {
 }
 function gameProject(host, { onBuild, watch: watchOverride, processOptions } = {}) {
   const project = createProjectProcess(host, processOptions), watch = watchOverride ?? project.watch;
+  const git = createProjectGit(host, project);
   const app = host.app, pending = new Map, roots = new Map, desktopRoots = new Map;
   const stopping = new AbortController;
   let closing = false;
   function directory(id) {
-    return join(host.dataRoot, "providers", name, digest(id));
+    return join3(projectWorkspace(host.dataRoot), digest(id));
   }
   async function readDesktopBinding(id) {
     const b = await binding(app, id);
@@ -438,7 +545,8 @@ function gameProject(host, { onBuild, watch: watchOverride, processOptions } = {
   }
   async function computeProjection(root) {
     onBuild?.(root);
-    const { story, catalog, links: edges } = await project.request("build", [root]);
+    const gitSnapshot = await git.snapshot(root, stopping.signal);
+    const { story, catalog, links: edges } = await project.request("build", [root, gitSnapshot]);
     const catalogByKind = Object.fromEntries(catalogKinds.map((k) => [k, catalog[k].initialConfig.records]));
     const catalogMap = Object.fromEntries(catalogKinds.map((k) => [k, new Map(catalogByKind[k].map((r) => [r.id, r]))]));
     const scenes = story.initialConfig.storyIndex;
@@ -654,7 +762,8 @@ function gameProject(host, { onBuild, watch: watchOverride, processOptions } = {
     if (!b?.root)
       return { configured: false, ready: false, message: b?.message ?? missingMessage };
     try {
-      const commit = await project.request("status", [b.root, b.commit], ctx.signal);
+      await project.request("status", [b.root], ctx.signal);
+      const commit = await git.head(b.root, ctx.signal).catch(() => b.commit);
       return { ready: true, configured: true, verifiedAt: b.verifiedAt, label: "游戏仓库", root: b.root, ...commit ? { commit } : {} };
     } catch {
       return { configured: false, ready: false, message: "无法读取已绑定的游戏目录。" + missingMessage };
@@ -672,7 +781,7 @@ function gameProject(host, { onBuild, watch: watchOverride, processOptions } = {
     if (op === "overview")
       return { count: rows.length, items: rows.slice(0, 3).map((r) => r.title) };
     if (op === "home") {
-      const home = homeRecords(kind, rows);
+      const home = homeRecords(kind, rows, (row) => data.linksBySource.has(kind + "\x00" + row.id));
       const linksOf = await linkResolver(id, noteId, kind, data);
       return { ...home, records: home.records.map((row) => ({ ...row, links: linksOf(row.id) })) };
     }
@@ -811,8 +920,9 @@ function gameProject(host, { onBuild, watch: watchOverride, processOptions } = {
     await app.core.writeRecord("states", recordKey(id), { ...prior, job: { id: executionId, message } });
     let root, commit;
     try {
-      root = await project.request("checkout", [origin, dir], signal);
-      commit = await project.request("validate", [root], signal);
+      root = await git.checkout(origin, dir, signal);
+      await project.request("validate", [root], signal);
+      commit = await git.head(root, signal);
       signal.throwIfAborted();
     } catch (error) {
       const { job: _job, ...previous } = prior ?? {};
